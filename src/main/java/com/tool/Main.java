@@ -71,28 +71,6 @@ public class Main {
 //        System.out.println(Arrays.stream(MyClassLoader.classLoader.getDefinedPackages()).map(it -> it.getName()).collect(Collectors.joining()));
 //        System.out.println(ClassLoader.getSystemClassLoader().loadClass("com.example.monolit.api.FlowerControler"));
         Set<Class<? extends Object>> allClasses = reflections.getSubTypesOf(Object.class);
-        System.out.println("allClasses.size()");
-        System.out.println(allClasses.size());
-
-        allClasses.stream().map(Main::getAutowiredFields).forEach(System.out::println);
-
-        allClasses.forEach(Main::processClass);
-    }
-
-    private static void processClass(Class<?> it){
-        ClassInfo newClass = new ClassInfo(getAutowiredFields(it), it);
-    }
-
-    private static boolean checkAnnotation(Field field) {
-        return Arrays.stream(field.getDeclaredAnnotations()).anyMatch(
-                it -> "org.springframework.beans.factory.annotation.Autowired".equals(it.annotationType().getName())
-        );
-    }
-
-    private static List<Field> getAutowiredFields(Class<?> it) {
-        return Arrays
-                .stream(it.getDeclaredFields())
-                .filter(Main::checkAnnotation)
-                .collect(Collectors.toList());
+        allClasses.forEach(ClassInfoProcesser::processClass);
     }
 }
