@@ -17,10 +17,11 @@ public class ClassInfoProcesser {
         );
     }
 
-    private static List<Field> getAutowiredFields(Class<?> it) {
+    private static List<Class<?>> getAutowiredFields(Class<?> it) {
         return Arrays
                 .stream(it.getDeclaredFields())
                 .filter(ClassInfoProcesser::checkAnnotation)
+                .map(Field::getDeclaringClass)
                 .collect(Collectors.toList());
     }
 
