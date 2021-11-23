@@ -5,6 +5,8 @@ import org.reflections.scanners.ResourcesScanner;
 import org.reflections.scanners.SubTypesScanner;
 import org.reflections.util.ClasspathHelper;
 import org.reflections.util.ConfigurationBuilder;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Service;
 
 import java.lang.annotation.Annotation;
 import java.lang.reflect.Field;
@@ -17,60 +19,26 @@ import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+import static com.tool.ClassInfoProcesser.*;
+
 public class Main {
-    public static synchronized void loadLibrary(java.io.File jar) {
-        try {
-            java.net.URL url = jar.toURI().toURL();
-            System.out.println("krk1");
-            java.lang.reflect.Method method = java.net.URLClassLoader.class.getDeclaredMethod("addURL", new Class[]{java.net.URL.class});
-            System.out.println("krk2");
-            method.setAccessible(true); /*promote the method to public access*/
-            System.out.println("krk3");
-            method.invoke(URLClassLoader.getPlatformClassLoader(), new Object[]{url});
-            System.out.println("krk4");
-        } catch (Exception ex) {
-            throw new RuntimeException("Cannot load library from jar file '" + jar.getAbsolutePath() + "'. Reason: " + ex.getMessage());
-        }
-    }
-
-    public static void main(String[] args) throws ClassNotFoundException, MalformedURLException, NoSuchMethodException, InvocationTargetException, IllegalAccessException {
-//        File file = new File("/home/marta/Desktop/Magisterka/monolit/target/monolit-0.0.1-SNAPSHOT.jar");
-//        MyClassLoader.addFile("/home/marta/Desktop/Magisterka/monolit/target/monolit-0.0.1-SNAPSHOT.jar");
-
-//        loadLibrary(file);
-//        URLClassLoader child = new URLClassLoader(
-//                new URL[] {file.toURI().toURL()},
-//                Main.class.getClassLoader()
-//        );
-//        Class classToLoad = Class.forName("com.MyClass", true, child);
-//        Method method = classToLoad.getDeclaredMethod("myMethod");
-//        Object instance = classToLoad.newInstance();
-//        Object result = method.invoke(instance);
-//        URL url = file.toURI().toURL();
-//
-//        URLClassLoader classLoader = (URLClassLoader)ClassLoader.getSystemClassLoader();
-//        Method method = URLClassLoader.class.getDeclaredMethod("addURL", URL.class);
-//        method.setAccessible(true);
-//        method.invoke(classLoader, url);
-
-//        List<ClassLoader> classLoadersList = new LinkedList<ClassLoader>();
-//        classLoadersList.add(ClassLoader.getSystemClassLoader());
-//        classLoadersList.add(ClasspathHelper.contextClassLoader());
-//        classLoadersList.add(ClasspathHelper.staticClassLoader());
+    public static void main(String[] args){
         Reflections reflections = new Reflections(
                 new ConfigurationBuilder()
-//                             .forPackage("com.example.monolit.api")
                         .setScanners(new SubTypesScanner(false /* don't exclude Object.class */), new ResourcesScanner())
-//                        .setUrls(ClasspathHelper.forClassLoader(ClassLoader.getSystemClassLoader()))
                         .setUrls(ClasspathHelper.forPackage("com.example"))
         );
-//        System.out.println(
-//                Arrays.stream(System.getProperty("java.class.path").split(File.pathSeparator)
-//                ).collect(Collectors.joining("\n"))
-//        );
-//        System.out.println(Arrays.stream(MyClassLoader.classLoader.getDefinedPackages()).map(it -> it.getName()).collect(Collectors.joining()));
-//        System.out.println(ClassLoader.getSystemClassLoader().loadClass("com.example.monolit.api.FlowerControler"));
-        Set<Class<? extends Object>> allClasses = reflections.getSubTypesOf(Object.class);
-        allClasses.forEach(ClassInfoProcesser::processClass);
+
+       //Zbierać tylko klasy annotowane service
+        Set<Class<?>> allClasses = reflections.getSubTypesOf(Object.class);
+        var serviceClasses = allClasses.stream()
+                .filter(it -> it.isAnnotationPresent(Service.class))
+                .collect(Collectors.toList());
+        List<ClassInfo> classInfos = serviceClasses.stream()
+                .map(ClassInfoProcesser::processClass)
+                .collect(Collectors.toList());
+
+        var dependenciesFromProject = getDependencies(classInfos);
+
     }
 }
