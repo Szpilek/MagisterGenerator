@@ -23,11 +23,13 @@ public class ClassInfoProcesser {
                 .collect(Collectors.toMap(ClassInfo::getClazz, it-> getDependenciesInProject(projectClasses, it)));
     }
 
-    private static List<Class<?>> getDependenciesInProject(List<Class<?>> allProjectClasses, ClassInfo info){
+    private static List<Class<?>> getDependenciesInProject(List<Class<?>> allProjectServices, ClassInfo info){
         var allClassDependencies = Stream.concat(info.getAutowiredFields().stream(), info.getConstructorArgs().stream())
                 .collect(Collectors.toSet());
-        return allProjectClasses.stream()
-                .filter(allClassDependencies::contains)
+        return allClassDependencies.stream()
+                .filter(dependency ->
+                        allProjectServices.stream()
+                            .anyMatch(dependency::isAssignableFrom))
                 .collect(Collectors.toList());
     }
 
