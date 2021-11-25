@@ -5,19 +5,12 @@ import org.reflections.scanners.ResourcesScanner;
 import org.reflections.scanners.SubTypesScanner;
 import org.reflections.util.ClasspathHelper;
 import org.reflections.util.ConfigurationBuilder;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
-import java.lang.annotation.Annotation;
-import java.lang.reflect.Field;
-import java.lang.reflect.InvocationTargetException;
-import java.net.MalformedURLException;
-import java.net.URLClassLoader;
-import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
 import static com.tool.ClassInfoProcesser.*;
 
@@ -38,7 +31,11 @@ public class Main {
                 .map(ClassInfoProcesser::processClass)
                 .collect(Collectors.toList());
 
-        var dependenciesFromProject = getDependencies(classInfos);
+        var dependenciesFromProject = createDependencyMap(classInfos);
+
+//        for(Class<?> dependency : dependenciesFromProject){
+//            Generator.generateClient(dependency);
+//        }
 
     }
 }

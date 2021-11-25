@@ -4,6 +4,8 @@ import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -12,19 +14,21 @@ public class ClassInfoProcesser {
         return new ClassInfo(getAutowiredFields(it), getConstructorArgs(it), it);
     }
 
-    public static List<Class<?>> getDependencies(List<ClassInfo> classInfos){
+    public static Map<Class<?>, List<Class<?>>> createDependencyMap(List<ClassInfo> classInfos){
         List<Class<?>> projectClasses = classInfos.stream()
                 .map(ClassInfo::getClazz)
                 .collect(Collectors.toList());
 
         return classInfos.stream()
-                .flatMap(it -> filterDependencies(projectClasses, it))
-                .collect(Collectors.toList());
+                .collect(Collectors.toMap(ClassInfo::getClazz, it-> getDependenciesInProject(projectClasses, it)));
     }
 
-    private static Stream<Class<?>> filterDependencies(List<Class<?>> classes, ClassInfo info){
-        return classes.stream()
-                .filter(it -> it.equals(info.getClazz()));
+    private static List<Class<?>> getDependenciesInProject(List<Class<?>> allProjectClasses, ClassInfo info){
+        var allClassDependencies = Stream.concat(info.getAutowiredFields().stream(), info.getConstructorArgs().stream())
+                .collect(Collectors.toSet());
+        return allProjectClasses.stream()
+                .filter(allClassDependencies::contains)
+                .collect(Collectors.toList());
     }
 
     private static boolean checkAnnotation(Field field) {
