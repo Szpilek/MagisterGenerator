@@ -33,11 +33,11 @@ public class Main {
                 .map(ClassInfoProcesser::processClass)
                 .collect(Collectors.toList());
 
-        var dependenciesFromProject = createDependencyMap(classInfos);
+        var serviceToServiceDependencies = createDependencyMap(classInfos);
 
-//        for(Class<?> dependency : dependenciesFromProject){
-//            Generator.generateClient(dependency);
-//        }
+        Generator.generateClients(serviceToServiceDependencies);
+
+
 
     }
 }
