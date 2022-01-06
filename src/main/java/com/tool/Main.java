@@ -1,5 +1,8 @@
 package com.tool;
 
+import com.github.javaparser.ParseResult;
+import com.github.javaparser.ast.CompilationUnit;
+import com.github.javaparser.utils.SourceRoot;
 import org.reflections.Reflections;
 import org.reflections.scanners.ResourcesScanner;
 import org.reflections.scanners.SubTypesScanner;
@@ -7,6 +10,8 @@ import org.reflections.util.ClasspathHelper;
 import org.reflections.util.ConfigurationBuilder;
 import org.springframework.stereotype.Service;
 
+import java.io.IOException;
+import java.nio.file.Path;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
@@ -34,11 +39,23 @@ public class Main {
                 .collect(Collectors.toList());
 
         var serviceToServiceDependencies = createDependencyMap(classInfos);
+        var parseResults = parseWithJavaParser();
+        Generator.generateClients(serviceToServiceDependencies, parseResults);
 
-        Generator.generateClients(serviceToServiceDependencies);
+    }
 
-
-
+    private static List<CompilationUnit> parseWithJavaParser() {
+        SourceRoot sourceRoot = new SourceRoot(Path.of("/home/marta/Desktop/Magisterka/monolit"));
+        List<CompilationUnit> parseResults = null;
+        try {
+            parseResults = sourceRoot.tryToParse("").stream()
+                    .map(it -> it.getResult().get()) // TODO fail with meaningful error message
+                    .collect(Collectors.toList());
+//            Parser.classParser(sourceRoot.tryToParse(""));
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+        return parseResults;
     }
 }
 

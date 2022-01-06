@@ -23,6 +23,15 @@ public class ClassInfoProcesser {
                 .collect(Collectors.toMap(ClassInfo::getClazz, it-> getDependenciesInProject(projectClasses, it)));
     }
 
+//    public static List<Class<?>> checkMissingGenericInfo(Map<Class<?>, List<Class<?>>> dependencyMap){
+//        Set<Class<?>> dependenciesToCheck = new HashSet<>();
+//        for (Class<?> dep : dependencyMap.keySet()){
+//            dependenciesToCheck.addAll(dependencyMap.get(dep));
+//        }
+//
+//        dependenciesToCheck.forEach();
+//    }
+
     private static List<Class<?>> getDependenciesInProject(List<Class<?>> allProjectServices, ClassInfo info){
         var allClassDependencies = Utils.combineToSet(info.getAutowiredFields(), info.getConstructorArgs());
         return allClassDependencies.stream()
