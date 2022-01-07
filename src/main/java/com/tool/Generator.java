@@ -7,9 +7,11 @@ package com.tool;
 
 import com.github.javaparser.ParseResult;
 import com.github.javaparser.ast.CompilationUnit;
+import com.github.javaparser.ast.ImportDeclaration;
 import com.github.javaparser.ast.NodeList;
 import com.github.javaparser.ast.body.MethodDeclaration;
 import com.github.javaparser.ast.body.Parameter;
+import com.github.javaparser.ast.nodeTypes.NodeWithSimpleName;
 
 import java.io.File;
 import java.io.IOException;
@@ -23,6 +25,8 @@ import java.util.stream.Collectors;
 
 public class Generator {
 
+    public static List<MethodInfo> methodInfos = new ArrayList<>();
+
     public final static String home = "/home/marta/Desktop/Magisterka/monolit/src/main/java/";
 
     public static void generateClients(Map<Class<?>, List<Class<?>>> dependenciesFromProject, List<CompilationUnit> parseResults) {
@@ -33,8 +37,8 @@ public class Generator {
 
     public static void generateClient(Class<?> clazz, List<CompilationUnit> parseResults) {
         String interfaceName = clazz.getName().replace(clazz.getPackageName() + ".", "");
-
-        String s = clazz.getPackage() + ";\n public class " + interfaceName + "Client implements " + interfaceName + " {\n";
+        String imports = getImports(clazz, parseResults);
+        String s = clazz.getPackage() + ";\n" + imports + "\n public class " + interfaceName + "Client implements " + interfaceName + " {\n";
 
         clazz.getGenericSuperclass();
 
@@ -60,39 +64,56 @@ public class Generator {
         method.getExceptionTypes();
         Random r = new Random(); //zamienić random na kolejne numerowanie argumentów a1, a2, a3
         char parameterName = (char) (r.nextInt(26) + 'a');
-        String parameters = Arrays.stream(method.getParameterTypes()).map(it -> it.getName() + " " + parameterName)
-                .collect(Collectors.joining());
+//        String parameters = Arrays.stream(method.getParameterTypes()).map(it -> it.getName() + " " + parameterName)
+//                .collect(Collectors.joining());
 
         String returnType = method.getReturnType().getName();
-//        if(method.getReturnType().getGenericSuperclass() != null){
-        returnType = getGenericType(method, parseResults, method.getReturnType());
-//        }
+        returnType = getGenericReturnType(method, parseResults);
+        List<String> parameters = getGenericParameters(method, parseResults);
+        String parameter = String.join("", parameters);
+        methodInfos.add(new MethodInfo(method.getName(), parameters, returnType, getMethodClassName(method), method.getDeclaringClass().getPackageName()));
 
         String s = "@Override\n" + Modifier.toString(method.getModifiers()).replace("abstract", "")
                 + " " + returnType + " " + method.getName()
-                + " (" + parameters
+                + " (" + parameter
                 + "){\n System.out.println(\"TEST\");}\n";
 
         return s;
     }
 
-    private static String getGenericType(Method method, List<CompilationUnit> parseResults, Class<?> clazz) {
-        var methodClassName = Arrays.stream(method.getDeclaringClass().getName().split("[.]")).reduce((first, second) -> second).get();
+    private static String getGenericReturnType(Method method, List<CompilationUnit> parseResults) {
+        var methodClassName = getMethodClassName(method);
         var classOrInterface = parseResults.stream()
 //                .filter(it -> it.getPackageDeclaration().get().getName().asString().equals(method.getDeclaringClass().getPackageName()))
                 .map(it -> it.getClassByName(methodClassName).or(() -> it.getInterfaceByName(methodClassName)))
                 .filter(Optional::isPresent)
                 .findFirst().get().get();
-       var methodInfo = classOrInterface.getChildNodes().stream()
+       var methodDeclaration = classOrInterface.getChildNodes().stream()
                .filter(it -> it instanceof MethodDeclaration)
                .map(it -> (MethodDeclaration) it)
                .filter(it -> it.getName().asString().equals(method.getName()))
                .filter(it -> checkIfMethodParametersEqual(it.getParameters(), method.getParameters()))
                .findFirst().get();
 
-        return methodInfo.getType().asString();
+        return methodDeclaration.getType().asString();
     }
 
+
+    public static String getMethodClassName(Method method){
+       return Arrays.stream(method.getDeclaringClass().getName().split("[.]")).reduce((first, second) -> second).get();
+    }
+
+    public static String getImports(Class<?> clazz, List<CompilationUnit> parseResults){
+        String clazzName = Arrays.stream(clazz.getName().split("[.]")).reduce((first, second) -> second).get();
+
+        var classOrInterface = parseResults.stream()
+                .map(it -> it.getClassByName(clazzName).or(() -> it.getInterfaceByName(clazzName)))
+                .filter(Optional::isPresent)
+                .findFirst().get().get();
+
+        var imports = classOrInterface.getParentNode().map(it -> (CompilationUnit) it).get().getImports();
+        return imports.stream().map(it -> "import " + it.getName().asString() + ";\n").collect(Collectors.joining());
+    }
 
     public static boolean checkIfMethodParametersEqual(
             NodeList<Parameter> parserParameters,
@@ -111,6 +132,22 @@ public class Generator {
             }
         }
         return true;
+    }
+
+    private static List<String> getGenericParameters(Method method, List<CompilationUnit> parseResults) {
+        var methodClassName = Arrays.stream(method.getDeclaringClass().getName().split("[.]")).reduce((first, second) -> second).get();
+        var classOrInterface = parseResults.stream()
+                .map(it -> it.getClassByName(methodClassName).or(() -> it.getInterfaceByName(methodClassName)))
+                .filter(Optional::isPresent)
+                .findFirst().get().get();
+        var methodInfo = classOrInterface.getChildNodes().stream()
+                .filter(it -> it instanceof MethodDeclaration)
+                .map(it -> (MethodDeclaration) it)
+                .filter(it -> it.getName().asString().equals(method.getName()))
+                .filter(it -> checkIfMethodParametersEqual(it.getParameters(), method.getParameters()))
+                .findFirst().get();
+
+        return methodInfo.getParameters().stream().map(it -> it.getType().asString() + " " + it.getNameAsString()).collect(Collectors.toList());
     }
 
 }
