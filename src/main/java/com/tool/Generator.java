@@ -9,6 +9,7 @@ import com.github.javaparser.ParseResult;
 import com.github.javaparser.ast.CompilationUnit;
 import com.github.javaparser.ast.ImportDeclaration;
 import com.github.javaparser.ast.NodeList;
+import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration;
 import com.github.javaparser.ast.body.MethodDeclaration;
 import com.github.javaparser.ast.body.Parameter;
 import com.github.javaparser.ast.nodeTypes.NodeWithSimpleName;
@@ -89,8 +90,7 @@ public class Generator {
     }
 
     private static String generateMethodForClient(Method method, List<CompilationUnit> parseResults) {
-        String returnType = method.getReturnType().getName();
-        returnType = getGenericReturnType(method, parseResults);
+        String returnType = getGenericReturnType(method, parseResults);
         List<ParameterInfo> parameterInfos = getParameters(method, parseResults);
         methodInfos.add(new MethodInfo(method.getName(), parameterInfos, returnType, getMethodClassName(method), method.getDeclaringClass().getPackageName()));
 
@@ -145,22 +145,10 @@ public class Generator {
     }
 
     private static String getGenericReturnType(Method method, List<CompilationUnit> parseResults) {
-        var methodClassName = getMethodClassName(method);
-        var classOrInterface = parseResults.stream()
-//                .filter(it -> it.getPackageDeclaration().get().getName().asString().equals(method.getDeclaringClass().getPackageName()))
-                .map(it -> it.getClassByName(methodClassName).or(() -> it.getInterfaceByName(methodClassName)))
-                .filter(Optional::isPresent)
-                .findFirst().get().get();
-       var methodDeclaration = classOrInterface.getChildNodes().stream()
-               .filter(it -> it instanceof MethodDeclaration)
-               .map(it -> (MethodDeclaration) it)
-               .filter(it -> it.getName().asString().equals(method.getName()))
-               .filter(it -> checkIfMethodParametersEqual(it.getParameters(), method.getParameters()))
-               .findFirst().get();
-
+        var classOrInterface = getClassOrInterface(getMethodClassName(method), parseResults);
+        var methodDeclaration = getMethod(method, classOrInterface);
         return methodDeclaration.getType().asString();
     }
-
 
     public static String getMethodClassName(Method method){
        return Arrays.stream(method.getDeclaringClass().getName().split("[.]")).reduce((first, second) -> second).get();
@@ -168,12 +156,7 @@ public class Generator {
 
     public static String getImports(Class<?> clazz, List<CompilationUnit> parseResults){
         String clazzName = Arrays.stream(clazz.getName().split("[.]")).reduce((first, second) -> second).get();
-
-        var classOrInterface = parseResults.stream()
-                .map(it -> it.getClassByName(clazzName).or(() -> it.getInterfaceByName(clazzName)))
-                .filter(Optional::isPresent)
-                .findFirst().get().get();
-
+        var classOrInterface = getClassOrInterface(clazzName, parseResults);
         var imports = classOrInterface.getParentNode().map(it -> (CompilationUnit) it).get().getImports();
         return imports.stream().map(it -> "import " + it.getName().asString() + ";\n").collect(Collectors.joining());
     }
@@ -196,19 +179,25 @@ public class Generator {
     }
 
     private static List<ParameterInfo> getParameters(Method method, List<CompilationUnit> parseResults) {
-        var methodClassName = Arrays.stream(method.getDeclaringClass().getName().split("[.]")).reduce((first, second) -> second).get();
-        var classOrInterface = parseResults.stream()
-                .map(it -> it.getClassByName(methodClassName).or(() -> it.getInterfaceByName(methodClassName)))
+        var classOrInterface = getClassOrInterface(getMethodClassName(method), parseResults);
+        var methodInfo = getMethod(method, classOrInterface);
+        return methodInfo.getParameters().stream().map(it -> new ParameterInfo(it.getType().asString(), it.getNameAsString())).collect(Collectors.toList());
+    }
+
+    private static ClassOrInterfaceDeclaration getClassOrInterface(String name, List<CompilationUnit> parseResults){
+        return parseResults.stream()
+                .map(it -> it.getClassByName(name).or(() -> it.getInterfaceByName(name)))
                 .filter(Optional::isPresent)
                 .findFirst().get().get();
-        var methodInfo = classOrInterface.getChildNodes().stream()
+    }
+
+    private static MethodDeclaration getMethod(Method method, ClassOrInterfaceDeclaration classOrInterface){
+        return classOrInterface.getChildNodes().stream()
                 .filter(it -> it instanceof MethodDeclaration)
                 .map(it -> (MethodDeclaration) it)
                 .filter(it -> it.getName().asString().equals(method.getName()))
                 .filter(it -> checkIfMethodParametersEqual(it.getParameters(), method.getParameters()))
                 .findFirst().get();
-
-          return methodInfo.getParameters().stream().map(it -> new ParameterInfo(it.getType().asString(), it.getNameAsString())).collect(Collectors.toList());
     }
 
 }
