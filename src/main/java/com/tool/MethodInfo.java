@@ -6,10 +6,10 @@ public class MethodInfo {
     String packageName;
     String className;
     String name;
-    List<String> parameters;
+    List<ParameterInfo> parameters;
     String returnType;
 
-    public MethodInfo(String name, List<String> parameters, String returnType, String className, String packageName) {
+    public MethodInfo(String name, List<ParameterInfo> parameters, String returnType, String className, String packageName) {
         this.name = name;
         this.parameters = parameters;
         this.returnType = returnType;
@@ -41,11 +41,11 @@ public class MethodInfo {
         this.name = name;
     }
 
-    public List<String> getParameters() {
+    public List<ParameterInfo> getParameters() {
         return parameters;
     }
 
-    public void setParameters(List<String> parameters) {
+    public void setParameters(List<ParameterInfo> parameters) {
         this.parameters = parameters;
     }
 

@@ -12,34 +12,71 @@ import com.github.javaparser.ast.NodeList;
 import com.github.javaparser.ast.body.MethodDeclaration;
 import com.github.javaparser.ast.body.Parameter;
 import com.github.javaparser.ast.nodeTypes.NodeWithSimpleName;
+import com.github.javaparser.symbolsolver.resolution.typeinference.TypeInference;
+import org.springframework.remoting.RemoteAccessException;
 
-import java.io.File;
-import java.io.IOException;
+import java.io.*;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
+import java.security.GeneralSecurityException;
 import java.util.*;
 import java.util.stream.Collectors;
 
-public class Generator {
+import static com.tool.Utils.*;
 
+public class Generator {
     public static List<MethodInfo> methodInfos = new ArrayList<>();
 
+    // TODO nie hardcodować
     public final static String home = "/home/marta/Desktop/Magisterka/monolit/src/main/java/";
+    public static String customImports = multilineString(
+            "import com.fasterxml.jackson.databind.ObjectMapper;",
+            "import com.fasterxml.jackson.core.type.TypeReference;",
+            "import com.fasterxml.jackson.core.JsonProcessingException;",
+            "import com.tool.communication_model.RemoteType;",
+            "import com.tool.communication_model.RemoteArgument;" ,
+            "import com.tool.communication_model.RemoteCall;"
+    );
 
     public static void generateClients(Map<Class<?>, List<Class<?>>> dependenciesFromProject, List<CompilationUnit> parseResults) {
+        generateCommunicationModel();
         Set<Class<?>> dependenciesToCreateClient = new HashSet<>();
         dependenciesFromProject.values().forEach(dependenciesToCreateClient::addAll);
         dependenciesToCreateClient.forEach(it -> Generator.generateClient(it, parseResults));
     }
 
+    public static void copyModelFile(String className) {
+        try {
+            File targetFile = new File(home + "com/tool/communication_model/"+ className +".java");
+            targetFile.getParentFile().mkdirs();
+            Files.copy(
+                    // TODO nie hardcodować
+                    Paths.get("/home/marta/Desktop/Magisterka/graphSolverReflections/src/main/java/com/tool/communication_model/"+ className +".java"),
+                    Paths.get(home + "com/tool/communication_model/"+ className +".java"),
+                    StandardCopyOption.REPLACE_EXISTING);
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    public static void generateCommunicationModel(){
+        List.of("RemoteArgument", "RemoteCall", "RemoteType")
+                .forEach(Generator::copyModelFile);
+    }
+
     public static void generateClient(Class<?> clazz, List<CompilationUnit> parseResults) {
         String interfaceName = clazz.getName().replace(clazz.getPackageName() + ".", "");
         String imports = getImports(clazz, parseResults);
-        String s = clazz.getPackage() + ";\n" + imports + "\n public class " + interfaceName + "Client implements " + interfaceName + " {\n";
-
+        String s = multilineString(
+                        clazz.getPackage().toString() + ";",
+                        imports,
+                        customImports,
+                        "public class " + interfaceName + "Client implements " + interfaceName + "{"
+                        );
         clazz.getGenericSuperclass();
 
 //        Class genericParameter0OfThisClass = ((ParameterizedType) getClass().getGenericSuperclass()).getActualTypeArguments()[0];
@@ -47,38 +84,64 @@ public class Generator {
 
         s += Arrays.stream(clazz.getMethods()).map(it -> Generator.generateMethodForClient(it, parseResults)).collect(Collectors.joining());
         s += "}";
-        String fileName = home + clazz.getName().replace(".", "/") + "Client.java";
-        Path path = Paths.get(fileName);
-        File targetFile = new File(fileName);
-        try {
-            targetFile.createNewFile();
-            Files.write(path, s.getBytes());
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
+        writeFile(home, clazz.getName().replace(".", "/") + "Client.java", s);
         System.out.println(s);
     }
 
     private static String generateMethodForClient(Method method, List<CompilationUnit> parseResults) {
-        method.getDeclaredAnnotations();
-        method.getExceptionTypes();
-        Random r = new Random(); //zamienić random na kolejne numerowanie argumentów a1, a2, a3
-        char parameterName = (char) (r.nextInt(26) + 'a');
-//        String parameters = Arrays.stream(method.getParameterTypes()).map(it -> it.getName() + " " + parameterName)
-//                .collect(Collectors.joining());
-
         String returnType = method.getReturnType().getName();
         returnType = getGenericReturnType(method, parseResults);
-        List<String> parameters = getGenericParameters(method, parseResults);
-        String parameter = String.join("", parameters);
-        methodInfos.add(new MethodInfo(method.getName(), parameters, returnType, getMethodClassName(method), method.getDeclaringClass().getPackageName()));
+        List<ParameterInfo> parameterInfos = getParameters(method, parseResults);
+        methodInfos.add(new MethodInfo(method.getName(), parameterInfos, returnType, getMethodClassName(method), method.getDeclaringClass().getPackageName()));
 
         String s = "@Override\n" + Modifier.toString(method.getModifiers()).replace("abstract", "")
                 + " " + returnType + " " + method.getName()
-                + " (" + parameter
-                + "){\n System.out.println(\"TEST\");}\n";
+                + " (" + parameterInfos.stream().map(it -> it.getType() + " " + it.getName()).collect(Collectors.joining(", "))
+                + "){\n "
+                + generateMethodBody(parameterInfos, method.getName(), "aaaa", returnType)
+                + "}\n";
 
         return s;
+    }
+
+    private static String generateMethodBody(List<ParameterInfo> parameterInfos, String mthodName, String serviceName, String returnType) {
+        String remoteCall = instantiate("RemoteCall" ,
+                                quoted(serviceName),
+                                quoted(serviceName),
+                        "List.of(" +
+                        parameterInfos.stream().map(Generator::serializeParameter).collect(Collectors.joining(","))
+                        + ")");
+
+        String returnValue = "void".equals(returnType)
+                ? ""
+                : "return mapper.readValue(mockReturn, new TypeReference<"+ returnType +">(){});";
+
+        return multilineString(
+                "ObjectMapper mapper = new ObjectMapper();",
+                "try {",
+                    "String body = mapper.writeValueAsString("+ remoteCall + ");",
+                    "String mockReturn = \"{}\";",
+                    returnValue,
+                "} catch (JsonProcessingException e) {",
+//                    TODO throw custom error ?
+                     "throw new RuntimeException(e);",
+                "}"
+
+        );
+    }
+
+    static String serializeParameterType(TypeInfo type) {
+        return instantiate("RemoteType",
+                type.name + ".class.getName()",
+                 "List.of(" + type.parameters.stream().map(Generator::serializeParameterType).collect(Collectors.joining(",")) + ")"
+                );
+    }
+
+    static String serializeParameter(ParameterInfo parameter){
+        return instantiate("RemoteArgument",
+                            "mapper.writeValueAsString("+ parameter.getName() + ")" ,
+                                serializeParameterType(TypeInfo.fromString(parameter.getType()))
+                    );
     }
 
     private static String getGenericReturnType(Method method, List<CompilationUnit> parseResults) {
@@ -125,16 +188,14 @@ public class Generator {
         }
 
         for(int i = 0; i < parserParameters.size(); i++){
-            for(int j = 0; j < methodParameters.length; j++){
-                if(!parserParameters.get(i).getName().asString().equals(methodParameters[j].getName())){
-                    return false;
-                }
+            if(!parserParameters.get(i).getName().asString().equals(methodParameters[i].getName())){
+                return false;
             }
         }
         return true;
     }
 
-    private static List<String> getGenericParameters(Method method, List<CompilationUnit> parseResults) {
+    private static List<ParameterInfo> getParameters(Method method, List<CompilationUnit> parseResults) {
         var methodClassName = Arrays.stream(method.getDeclaringClass().getName().split("[.]")).reduce((first, second) -> second).get();
         var classOrInterface = parseResults.stream()
                 .map(it -> it.getClassByName(methodClassName).or(() -> it.getInterfaceByName(methodClassName)))
@@ -147,7 +208,7 @@ public class Generator {
                 .filter(it -> checkIfMethodParametersEqual(it.getParameters(), method.getParameters()))
                 .findFirst().get();
 
-        return methodInfo.getParameters().stream().map(it -> it.getType().asString() + " " + it.getNameAsString()).collect(Collectors.toList());
+          return methodInfo.getParameters().stream().map(it -> new ParameterInfo(it.getType().asString(), it.getNameAsString())).collect(Collectors.toList());
     }
 
 }
