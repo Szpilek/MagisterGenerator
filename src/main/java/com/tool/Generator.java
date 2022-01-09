@@ -1,33 +1,26 @@
 package com.tool;
 
-//import com.github.javaparser.JavaParser;
-//import com.github.javaparser.ParseResult;
-//import com.github.javaparser.StaticJavaParser;
-//import com.github.javaparser.ast.CompilationUnit;
-
-import com.github.javaparser.ParseResult;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JavaType;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.javaparser.ast.CompilationUnit;
-import com.github.javaparser.ast.ImportDeclaration;
-import com.github.javaparser.ast.NodeList;
-import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration;
-import com.github.javaparser.ast.body.MethodDeclaration;
-import com.github.javaparser.ast.body.Parameter;
-import com.github.javaparser.ast.nodeTypes.NodeWithSimpleName;
-import com.github.javaparser.symbolsolver.resolution.typeinference.TypeInference;
-import org.springframework.remoting.RemoteAccessException;
+import com.tool.communication_model.RemoteCall;
+import com.tool.communication_model.RemoteArgument;
+import com.tool.communication_model.RemoteType;
+import org.springframework.context.ApplicationContext;
 
 import java.io.*;
+import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.nio.file.Files;
-import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
-import java.security.GeneralSecurityException;
 import java.util.*;
 import java.util.stream.Collectors;
 
 import static com.tool.Utils.*;
+import static com.tool.ParserUtils.*;
 
 public class Generator {
     public static List<MethodInfo> methodInfos = new ArrayList<>();
@@ -43,11 +36,116 @@ public class Generator {
             "import com.tool.communication_model.RemoteCall;"
     );
 
-    public static void generateClients(Map<Class<?>, List<Class<?>>> dependenciesFromProject, List<CompilationUnit> parseResults) {
-        generateCommunicationModel();
+    static String wrapperImports = multilineString(
+            "import java.lang.reflect.InvocationTargetException;",
+            "import com.fasterxml.jackson.databind.JavaType;",
+            "import org.springframework.context.ApplicationContext;",
+            "import java.io.IOException;",
+            "import java.io.InputStream;",
+            "import java.io.OutputStream;",
+            "import java.util.stream.Collectors;"
+    );
+
+    public static void generateClients(Map<Class<?>, List<Class<?>>> dependenciesFromProject, List<CompilationUnit> compilationUnits) {
         Set<Class<?>> dependenciesToCreateClient = new HashSet<>();
         dependenciesFromProject.values().forEach(dependenciesToCreateClient::addAll);
-        dependenciesToCreateClient.forEach(it -> Generator.generateClient(it, parseResults));
+        dependenciesToCreateClient.forEach(clazz -> {
+            var methodInfos = Arrays.stream(clazz.getMethods())
+                    .map(method -> {
+                        String returnType = getReturnType(method, compilationUnits);
+                        List<ParameterInfo> parameterInfos = getParameters(method, compilationUnits);
+                        return new MethodInfo(method, method.getName(), parameterInfos, returnType, getMethodClassName(method), method.getDeclaringClass().getPackageName());
+                    }).collect(Collectors.toList());
+            String imports = getImports(clazz, compilationUnits);
+
+            Generator.generateClient(clazz, imports, methodInfos);
+            Generator.generateServiceWrapper(clazz, imports, methodInfos);
+        });
+    }
+
+
+    private static void generateServiceWrapper(Class<?> clazz, String imports, List<MethodInfo> methodInfos) {
+       String classString = multilineString(
+        imports,
+        customImports,
+        wrapperImports,
+        "public class StreamLambdaHandler implements RequestStreamHandler {",
+        "    private static ApplicationContext context;",
+        "    private ObjectMapper objectMapper = new ObjectMapper();",
+        "    static {",
+        "        try {",
+        "            context = SpringBootLambdaContainerHandler.getAwsProxyHandler(Application.class).get;",
+        "        } catch (ContainerInitializationException e) {",
+        "            e.printStackTrace();",
+        "            throw new RuntimeException(\"Could not initialize Spring Boot application\", e);",
+        "        }",
+        "    }",
+        "",
+        "    @Override",
+        "    public void handleRequest(InputStream inputStream, OutputStream outputStream, Context context)",
+        "            throws IOException {",
+        "        RemoteCall call = objectMapper.readValue(inputStream, RemoteCall.class);",
+        "        objectMapper.writeValue(outputStream, execute(call));",
+        "    }",
+        "    Object execute(RemoteCall call) {",
+        "        var arguments = call.getArguments().stream()",
+        "                .map(arg -> {",
+        "                    try {",
+        "                        return objectMapper.readValue(arg.getValue(), javaType(arg.getType()));",
+        "                    } catch (JsonProcessingException e) {",
+        "                        throw new RuntimeException(\"Cannot deserialize parameter\", e);",
+        "                    }",
+        "                }).collect(Collectors.toList());",
+        "        var argTypes = toArray(arguments.stream().map(Object::getClass).collect(Collectors.toList());)",
+        "        var serviceBean  = context.getBean(call.getService());",
+        "        try {",
+        "            return serviceBean.getClass().getMethod(call.getMethod(), argTypes)",
+        "            .invoke(serviceBean, toArray(arguments));",
+        "        } catch (NoSuchMethodException | IllegalAccessException | InvocationTargetException e) {",
+        "            throw new RuntimeException(e);",
+        "        }",
+        "",
+        "    }",
+        "",
+        "    JavaType javaType(RemoteType remoteType) {",
+        "        var simpleType = objectMapper.getTypeFactory().constructFromCanonical(remoteType.getType());",
+        "        var typeParameters = remoteType.getParameters().stream()",
+        "                .map(it -> javaType(it))",
+        "                .collect(Collectors.toList());",
+        "        return remoteType.getParameters().isEmpty()",
+        "                ? simpleType",
+        "                : objectMapper.getTypeFactory().constructParametricType(",
+        "                simpleType.getRawClass(),",
+        "                toArray(typeParameters)",
+        "        );",
+        "    }",
+        "}");
+        writeFile(home, clazz.getName().replace(".", "/") + "Lambda.java", classString);
+    }
+
+
+
+
+
+    private static void generateControllerWrapper(Class<?> clazz, String imports, List<MethodInfo> methodInfos) {
+        String s =multilineString(
+                "public class StreamLambdaHandler implements RequestStreamHandler {",
+                "    private static SpringBootLambdaContainerHandler<AwsProxyRequest, AwsProxyResponse> handler;",
+                "    static {",
+                "        try {",
+                "            handler = SpringBootLambdaContainerHandler.getAwsProxyHandler(Application.class);",
+                "        } catch (ContainerInitializationException e) {",
+                "            e.printStackTrace();",
+                "            throw new RuntimeException(\"Could not initialize Spring Boot application\", e);",
+                "        }",
+                "    }",
+                "",
+                "    @Override",
+                "    public void handleRequest(InputStream inputStream, OutputStream outputStream, Context context)",
+                "            throws IOException {",
+                "        handler.proxyStream(inputStream, outputStream, context);",
+                "    }",
+                "}");
     }
 
     public static void copyModelFile(String className) {
@@ -69,52 +167,41 @@ public class Generator {
                 .forEach(Generator::copyModelFile);
     }
 
-    public static void generateClient(Class<?> clazz, List<CompilationUnit> parseResults) {
+    private static void generateClient(Class<?> clazz, String imports, List<MethodInfo> methodInfos) {
         String interfaceName = clazz.getName().replace(clazz.getPackageName() + ".", "");
-        String imports = getImports(clazz, parseResults);
         String s = multilineString(
                         clazz.getPackage().toString() + ";",
                         imports,
                         customImports,
-                        "public class " + interfaceName + "Client implements " + interfaceName + "{"
-                        );
-        clazz.getGenericSuperclass();
-
-//        Class genericParameter0OfThisClass = ((ParameterizedType) getClass().getGenericSuperclass()).getActualTypeArguments()[0];
-
-
-        s += Arrays.stream(clazz.getMethods()).map(it -> Generator.generateMethodForClient(it, parseResults)).collect(Collectors.joining());
-        s += "}";
+                        "public class " + interfaceName + "Client implements " + interfaceName + "{",
+                        methodInfos.stream().map(Generator::methodForClient).collect(Collectors.joining()),
+                        "}"
+                    );
         writeFile(home, clazz.getName().replace(".", "/") + "Client.java", s);
-        System.out.println(s);
     }
 
-    private static String generateMethodForClient(Method method, List<CompilationUnit> parseResults) {
-        String returnType = getGenericReturnType(method, parseResults);
-        List<ParameterInfo> parameterInfos = getParameters(method, parseResults);
-        methodInfos.add(new MethodInfo(method.getName(), parameterInfos, returnType, getMethodClassName(method), method.getDeclaringClass().getPackageName()));
-
-        String s = "@Override\n" + Modifier.toString(method.getModifiers()).replace("abstract", "")
-                + " " + returnType + " " + method.getName()
-                + " (" + parameterInfos.stream().map(it -> it.getType() + " " + it.getName()).collect(Collectors.joining(", "))
-                + "){\n "
-                + generateMethodBody(parameterInfos, method.getName(), "aaaa", returnType)
-                + "}\n";
-
-        return s;
+    private static String methodForClient(MethodInfo mi) {
+        return multilineString(
+                "@Override\n" + Modifier.toString(mi.getMethod().getModifiers()).replace("abstract", ""),
+                " " + mi.getReturnType() + " " + mi.getName(),
+                " (" + mi.getParameters().stream().map(it -> it.getType() + " " + it.getName()).collect(Collectors.joining(", ")),
+                "){",
+                clientMethodBody(mi, "asd"),
+                "}"
+        );
     }
 
-    private static String generateMethodBody(List<ParameterInfo> parameterInfos, String mthodName, String serviceName, String returnType) {
+    private static String clientMethodBody(MethodInfo mi, String serviceName) {
         String remoteCall = instantiate("RemoteCall" ,
                                 quoted(serviceName),
-                                quoted(serviceName),
+                                quoted(mi.getName()),
                         "List.of(" +
-                        parameterInfos.stream().map(Generator::serializeParameter).collect(Collectors.joining(","))
+                                mi.getParameters().stream().map(Generator::serializeParameter).collect(Collectors.joining(","))
                         + ")");
 
-        String returnValue = "void".equals(returnType)
+        String returnValue = "void".equals(mi.getReturnType())
                 ? ""
-                : "return mapper.readValue(mockReturn, new TypeReference<"+ returnType +">(){});";
+                : "return mapper.readValue(mockReturn, new TypeReference<"+ mi.getReturnType() +">(){});";
 
         return multilineString(
                 "ObjectMapper mapper = new ObjectMapper();",
@@ -143,61 +230,4 @@ public class Generator {
                                 serializeParameterType(TypeInfo.fromString(parameter.getType()))
                     );
     }
-
-    private static String getGenericReturnType(Method method, List<CompilationUnit> parseResults) {
-        var classOrInterface = getClassOrInterface(getMethodClassName(method), parseResults);
-        var methodDeclaration = getMethod(method, classOrInterface);
-        return methodDeclaration.getType().asString();
-    }
-
-    public static String getMethodClassName(Method method){
-       return Arrays.stream(method.getDeclaringClass().getName().split("[.]")).reduce((first, second) -> second).get();
-    }
-
-    public static String getImports(Class<?> clazz, List<CompilationUnit> parseResults){
-        String clazzName = Arrays.stream(clazz.getName().split("[.]")).reduce((first, second) -> second).get();
-        var classOrInterface = getClassOrInterface(clazzName, parseResults);
-        var imports = classOrInterface.getParentNode().map(it -> (CompilationUnit) it).get().getImports();
-        return imports.stream().map(it -> "import " + it.getName().asString() + ";\n").collect(Collectors.joining());
-    }
-
-    public static boolean checkIfMethodParametersEqual(
-            NodeList<Parameter> parserParameters,
-            java.lang.reflect.Parameter[] methodParameters){
-        if (methodParameters.length == 0 && parserParameters.isEmpty()){
-            return true;
-        } else if (methodParameters.length != parserParameters.size()){
-            return false;
-        }
-
-        for(int i = 0; i < parserParameters.size(); i++){
-            if(!parserParameters.get(i).getName().asString().equals(methodParameters[i].getName())){
-                return false;
-            }
-        }
-        return true;
-    }
-
-    private static List<ParameterInfo> getParameters(Method method, List<CompilationUnit> parseResults) {
-        var classOrInterface = getClassOrInterface(getMethodClassName(method), parseResults);
-        var methodInfo = getMethod(method, classOrInterface);
-        return methodInfo.getParameters().stream().map(it -> new ParameterInfo(it.getType().asString(), it.getNameAsString())).collect(Collectors.toList());
-    }
-
-    private static ClassOrInterfaceDeclaration getClassOrInterface(String name, List<CompilationUnit> parseResults){
-        return parseResults.stream()
-                .map(it -> it.getClassByName(name).or(() -> it.getInterfaceByName(name)))
-                .filter(Optional::isPresent)
-                .findFirst().get().get();
-    }
-
-    private static MethodDeclaration getMethod(Method method, ClassOrInterfaceDeclaration classOrInterface){
-        return classOrInterface.getChildNodes().stream()
-                .filter(it -> it instanceof MethodDeclaration)
-                .map(it -> (MethodDeclaration) it)
-                .filter(it -> it.getName().asString().equals(method.getName()))
-                .filter(it -> checkIfMethodParametersEqual(it.getParameters(), method.getParameters()))
-                .findFirst().get();
-    }
-
 }

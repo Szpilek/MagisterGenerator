@@ -49,4 +49,7 @@ public class Utils {
     static String multilineString(String... lines) {
         return Arrays.stream(lines).collect(Collectors.joining("\n"));
     }
+    static <T> T[]  toArray(List<T> list) {
+        return (T[]) list.toArray(new Object[list.size()]);
+    }
 }

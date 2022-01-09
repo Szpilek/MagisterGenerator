@@ -1,20 +1,31 @@
 package com.tool;
 
 import java.util.List;
+import java.lang.reflect.Method;
 
 public class MethodInfo {
+    Method method;
     String packageName;
     String className;
     String name;
     List<ParameterInfo> parameters;
     String returnType;
 
-    public MethodInfo(String name, List<ParameterInfo> parameters, String returnType, String className, String packageName) {
+    public MethodInfo(Method method, String name, List<ParameterInfo> parameters, String returnType, String className, String packageName) {
+        this.method = method;
         this.name = name;
         this.parameters = parameters;
         this.returnType = returnType;
         this.className = className;
         this.packageName = packageName;
+    }
+
+    public Method getMethod() {
+        return method;
+    }
+
+    public void setMethod(Method method) {
+        this.method = method;
     }
 
     public String getPackageName() {

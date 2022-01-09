@@ -31,6 +31,7 @@ public class Main {
 
        //Zbierać tylko klasy annotowane service
         Set<Class<?>> allClasses = reflections.getSubTypesOf(Object.class);
+        Class<?> springBootApplicationClazz = findSpringBootApplicationClass(allClasses);
         var serviceClasses = allClasses.stream()
                 .filter(it -> it.isAnnotationPresent(Service.class))
                 .collect(Collectors.toList());
@@ -40,6 +41,7 @@ public class Main {
 
         var serviceToServiceDependencies = createDependencyMap(classInfos);
         var parseResults = parseWithJavaParser();
+        Generator.generateCommunicationModel();
         Generator.generateClients(serviceToServiceDependencies, parseResults);
 
     }

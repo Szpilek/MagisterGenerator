@@ -1,6 +1,8 @@
 package com.tool;
 
 import jdk.jshell.execution.Util;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.stereotype.Service;
 
 import java.lang.reflect.Array;
 import java.lang.reflect.Constructor;
@@ -63,7 +65,10 @@ public class ClassInfoProcesser {
         return Arrays.stream(constructor.getParameterTypes()).collect(Collectors.toList());
     }
 
-
-
-
+    public static Class<?> findSpringBootApplicationClass(Set<Class<?>> allClasses){
+        return allClasses.stream()
+                .filter(it -> it.isAnnotationPresent(SpringBootApplication.class))
+                .findFirst()
+                .orElseThrow(() -> new RuntimeException("No class annotated with @SpringBootApplication"));
+    }
 }
