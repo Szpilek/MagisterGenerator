@@ -47,6 +47,10 @@ public class ParserUtils {
         return true;
     }
 
+    public static String getPrettyClassOrInterfaceName(Class<?> clazz){
+        return clazz.getName().replace(clazz.getPackageName() + ".", "");
+    }
+
     public static String getReturnType(Method method, List<CompilationUnit> parseResults) {
         var classOrInterface = getClassOrInterface(getMethodClassName(method), parseResults);
         var methodDeclaration = getMethod(method, classOrInterface);

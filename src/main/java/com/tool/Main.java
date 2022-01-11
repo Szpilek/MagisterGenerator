@@ -42,8 +42,8 @@ public class Main {
         var serviceToServiceDependencies = createDependencyMap(classInfos);
         var parseResults = parseWithJavaParser();
         Generator.generateCommunicationModel();
+        Generator.generateSpringProfiles(serviceToServiceDependencies, parseResults);
         Generator.generateClients(serviceToServiceDependencies, parseResults);
-
     }
 
     private static List<CompilationUnit> parseWithJavaParser() {

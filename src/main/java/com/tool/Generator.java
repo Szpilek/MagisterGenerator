@@ -4,10 +4,13 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JavaType;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.javaparser.ast.CompilationUnit;
+import com.github.javaparser.ast.expr.AnnotationExpr;
 import com.tool.communication_model.RemoteCall;
 import com.tool.communication_model.RemoteArgument;
 import com.tool.communication_model.RemoteType;
+import javassist.bytecode.annotation.Annotation;
 import org.springframework.context.ApplicationContext;
+import org.springframework.context.annotation.Profile;
 
 import java.io.*;
 import java.lang.reflect.InvocationTargetException;
@@ -19,6 +22,7 @@ import java.nio.file.StandardCopyOption;
 import java.util.*;
 import java.util.stream.Collectors;
 
+import static com.tool.ParserUtils.getPrettyClassOrInterfaceName;
 import static com.tool.Utils.*;
 import static com.tool.ParserUtils.*;
 
@@ -33,7 +37,8 @@ public class Generator {
             "import com.fasterxml.jackson.core.JsonProcessingException;",
             "import com.tool.communication_model.RemoteType;",
             "import com.tool.communication_model.RemoteArgument;" ,
-            "import com.tool.communication_model.RemoteCall;"
+            "import com.tool.communication_model.RemoteCall;",
+            "import org.springframework.context.annotation.Profile;"
     );
 
     static String wrapperImports = multilineString(
@@ -57,12 +62,31 @@ public class Generator {
                         return new MethodInfo(method, method.getName(), parameterInfos, returnType, getMethodClassName(method), method.getDeclaringClass().getPackageName());
                     }).collect(Collectors.toList());
             String imports = getImports(clazz, compilationUnits);
-
-            Generator.generateClient(clazz, imports, methodInfos);
+            var profiles = findSpringProfilesForClient(dependenciesFromProject, clazz);
+            Generator.generateClient(clazz, imports, methodInfos, profiles);
             Generator.generateServiceWrapper(clazz, imports, methodInfos);
         });
     }
 
+    public static void generateSpringProfiles(Map<Class<?>, List<Class<?>>> dependenciesFromProject, List<CompilationUnit> compilationUnits){
+        dependenciesFromProject.keySet().forEach((it) -> {
+            var clazz = getClassOrInterface(getPrettyClassOrInterfaceName(it), compilationUnits);
+            clazz.addSingleMemberAnnotation(Profile.class, quoted(getPrettyClassOrInterfaceName(it)));
+            clazz.tryAddImportToParentCompilationUnit(Profile.class);
+        });
+
+        compilationUnits.forEach(it -> System.out.println(it));
+    }
+
+    private static String findSpringProfilesForClient(Map<Class<?>, List<Class<?>>> dependenciesFromProject, Class<?> clazz){
+        return dependenciesFromProject.keySet().stream()
+                .filter(key ->
+                        dependenciesFromProject.get(key)
+                                .stream().anyMatch(value -> value.isAssignableFrom(clazz)))
+                .map(ParserUtils::getPrettyClassOrInterfaceName)
+                .map(it -> "@Profile(" + quoted(it) + ")")
+                .collect(Collectors.joining("\n"));
+    }
 
     private static void generateServiceWrapper(Class<?> clazz, String imports, List<MethodInfo> methodInfos) {
        String classString = multilineString(
@@ -167,12 +191,13 @@ public class Generator {
                 .forEach(Generator::copyModelFile);
     }
 
-    private static void generateClient(Class<?> clazz, String imports, List<MethodInfo> methodInfos) {
+    private static void generateClient(Class<?> clazz, String imports, List<MethodInfo> methodInfos, String profiles) {
         String interfaceName = clazz.getName().replace(clazz.getPackageName() + ".", "");
         String s = multilineString(
                         clazz.getPackage().toString() + ";",
                         imports,
                         customImports,
+                        profiles,
                         "public class " + interfaceName + "Client implements " + interfaceName + "{",
                         methodInfos.stream().map(Generator::methodForClient).collect(Collectors.joining()),
                         "}"
