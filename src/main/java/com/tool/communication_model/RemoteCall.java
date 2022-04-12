@@ -14,6 +14,21 @@ public class RemoteCall {
         this.arguments = arguments;
     }
 
+    public RemoteCall() {
+    }
+
+    public void setService(String service) {
+        this.service = service;
+    }
+
+    public void setMethod(String method) {
+        this.method = method;
+    }
+
+    public void setArguments(List<RemoteArgument> arguments) {
+        this.arguments = arguments;
+    }
+
     public String getService() {
         return service;
     }

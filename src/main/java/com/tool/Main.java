@@ -20,6 +20,7 @@ import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
 import static com.tool.ClassInfoProcesser.*;
+import static com.tool.ParserUtils.getPrettyClassOrInterfaceName;
 
 public class Main {
     public static void main(String[] args){
@@ -43,7 +44,7 @@ public class Main {
         var parseResults = parseWithJavaParser();
         Generator.generateCommunicationModel();
         Generator.generateSpringProfiles(serviceToServiceDependencies, parseResults);
-        Generator.generateClients(serviceToServiceDependencies, parseResults);
+        Generator.generateClients(serviceToServiceDependencies, parseResults, springBootApplicationClazz);
     }
 
     private static List<CompilationUnit> parseWithJavaParser() {

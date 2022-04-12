@@ -1,5 +1,6 @@
 package com.tool;
 
+import com.example.monolit.MonolitApplication;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JavaType;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -13,9 +14,11 @@ import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.Profile;
 
 import java.io.*;
+import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
@@ -42,16 +45,22 @@ public class Generator {
     );
 
     static String wrapperImports = multilineString(
+            "import java.lang.reflect.Field;",
             "import java.lang.reflect.InvocationTargetException;",
             "import com.fasterxml.jackson.databind.JavaType;",
             "import org.springframework.context.ApplicationContext;",
+            "import com.amazonaws.serverless.exceptions.ContainerInitializationException;",
+            "import com.amazonaws.serverless.proxy.spring.SpringBootLambdaContainerHandler;",
+            "import com.amazonaws.services.lambda.runtime.Context;",
+            "import com.amazonaws.services.lambda.runtime.RequestStreamHandler;",
+            "import com.amazonaws.serverless.proxy.spring.SpringBootLambdaContainerHandler;",
             "import java.io.IOException;",
             "import java.io.InputStream;",
             "import java.io.OutputStream;",
             "import java.util.stream.Collectors;"
     );
 
-    public static void generateClients(Map<Class<?>, List<Class<?>>> dependenciesFromProject, List<CompilationUnit> compilationUnits) {
+    public static void generateClients(Map<Class<?>, List<Class<?>>> dependenciesFromProject, List<CompilationUnit> compilationUnits, Class<?> homeClass) {
         Set<Class<?>> dependenciesToCreateClient = new HashSet<>();
         dependenciesFromProject.values().forEach(dependenciesToCreateClient::addAll);
         dependenciesToCreateClient.forEach(clazz -> {
@@ -64,7 +73,12 @@ public class Generator {
             String imports = getImports(clazz, compilationUnits);
             var profiles = findSpringProfilesForClient(dependenciesFromProject, clazz);
             Generator.generateClient(clazz, imports, methodInfos, profiles);
-            Generator.generateServiceWrapper(clazz, imports, methodInfos);
+//            Generator.generateServiceWrapper(clazz, imports, methodInfos, homeClass);
+        });
+
+        dependenciesFromProject.keySet().forEach(clazz -> {
+            String imports = getImports(clazz, compilationUnits);
+            Generator.generateServiceWrapper(clazz, imports, homeClass);
         });
     }
 
@@ -73,6 +87,7 @@ public class Generator {
             var clazz = getClassOrInterface(getPrettyClassOrInterfaceName(it), compilationUnits);
             clazz.addSingleMemberAnnotation(Profile.class, quoted(getPrettyClassOrInterfaceName(it)));
             clazz.tryAddImportToParentCompilationUnit(Profile.class);
+            writeFile(home, it.getName().replace(".", "/") + ".java", clazz.getParentNode().get().toString());
         });
 
         compilationUnits.forEach(it -> System.out.println(it));
@@ -88,23 +103,27 @@ public class Generator {
                 .collect(Collectors.joining("\n"));
     }
 
-    private static void generateServiceWrapper(Class<?> clazz, String imports, List<MethodInfo> methodInfos) {
+    private static void generateServiceWrapper(Class<?> clazz, String imports, Class<?> homeClass ) {
        String classString = multilineString(
+        clazz.getPackage() + ";",
+        "import " + homeClass.getName() + ";",
         imports,
         customImports,
         wrapperImports,
         "public class StreamLambdaHandler implements RequestStreamHandler {",
         "    private static ApplicationContext context;",
-        "    private ObjectMapper objectMapper = new ObjectMapper();",
         "    static {",
         "        try {",
-        "            context = SpringBootLambdaContainerHandler.getAwsProxyHandler(Application.class).get;",
-        "        } catch (ContainerInitializationException e) {",
+        "            var a = SpringBootLambdaContainerHandler.getAwsProxyHandler(" + getPrettyClassOrInterfaceName(homeClass) + ".class, "+ quoted(getPrettyClassOrInterfaceName(clazz)) + ");",
+        "            Field field = SpringBootLambdaContainerHandler.class.getDeclaredField(\"applicationContext\");",
+        "            field.setAccessible(true);",
+        "            context = (ApplicationContext) field.get(a);",
+        "        } catch (ContainerInitializationException | NoSuchFieldException | IllegalAccessException e) {",
         "            e.printStackTrace();",
-        "            throw new RuntimeException(\"Could not initialize Spring Boot application\", e);",
+        "            throw new RuntimeException(e);",
         "        }",
         "    }",
-        "",
+        "    private ObjectMapper objectMapper = new ObjectMapper();",
         "    @Override",
         "    public void handleRequest(InputStream inputStream, OutputStream outputStream, Context context)",
         "            throws IOException {",
@@ -120,11 +139,11 @@ public class Generator {
         "                        throw new RuntimeException(\"Cannot deserialize parameter\", e);",
         "                    }",
         "                }).collect(Collectors.toList());",
-        "        var argTypes = toArray(arguments.stream().map(Object::getClass).collect(Collectors.toList());)",
+        "        var argTypes = arguments.stream().map(Object::getClass).collect(Collectors.toList());",
         "        var serviceBean  = context.getBean(call.getService());",
         "        try {",
-        "            return serviceBean.getClass().getMethod(call.getMethod(), argTypes)",
-        "            .invoke(serviceBean, toArray(arguments));",
+        "            return serviceBean.getClass().getMethod(call.getMethod(), argTypes.toArray(Class[]::new))",
+        "            .invoke(serviceBean, arguments.toArray(Object[]::new));",
         "        } catch (NoSuchMethodException | IllegalAccessException | InvocationTargetException e) {",
         "            throw new RuntimeException(e);",
         "        }",
@@ -140,7 +159,7 @@ public class Generator {
         "                ? simpleType",
         "                : objectMapper.getTypeFactory().constructParametricType(",
         "                simpleType.getRawClass(),",
-        "                toArray(typeParameters)",
+        "                typeParameters.toArray(JavaType[]::new)",
         "        );",
         "    }",
         "}");
