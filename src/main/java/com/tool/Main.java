@@ -10,6 +10,7 @@ import org.reflections.util.ClasspathHelper;
 import org.reflections.util.ConfigurationBuilder;
 import org.springframework.stereotype.Service;
 
+import java.io.File;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.Collection;
@@ -24,7 +25,16 @@ import static com.tool.ParserUtils.getPrettyClassOrInterfaceName;
 
 public class Main {
     public static void main(String[] args) throws IOException {
-        String[] cmd = new String[]{"/bin/sh", "/home/marta/Desktop/Magisterka/graphSolverReflections/copy_project_resources.sh"};
+        if(args[0] == null || args[0].equals("")){
+            throw new RuntimeException("Incorrect path");
+        }
+        String projectPath = args[0];
+        String generatedPath = projectPath + "_gen";
+        boolean wasProjectAlreadyGenerated = new File(generatedPath).exists();
+        if(wasProjectAlreadyGenerated){
+            throw new RuntimeException("Project already generated");
+        }
+        String[] cmd = new String[]{"cp", "-R", projectPath, generatedPath};
         Process pr = Runtime.getRuntime().exec(cmd);
 
         Reflections reflections = new Reflections(
@@ -44,14 +54,15 @@ public class Main {
                 .collect(Collectors.toList());
 
         var serviceToServiceDependencies = createDependencyMap(classInfos);
-        var parseResults = parseWithJavaParser();
+        var parseResults = parseWithJavaParser(generatedPath);
         Generator.generateCommunicationModel();
         Generator.generateSpringProfiles(serviceToServiceDependencies, parseResults);
         Generator.generateClients(serviceToServiceDependencies, parseResults, springBootApplicationClazz);
     }
 
-    private static List<CompilationUnit> parseWithJavaParser() {
-        SourceRoot sourceRoot = new SourceRoot(Path.of("/home/marta/Desktop/Magisterka/monolit_backup/monolit"));
+    private static List<CompilationUnit> parseWithJavaParser(String generatedPath) {
+//        SourceRoot sourceRoot = new SourceRoot(Path.of("/home/marta/Desktop/Magisterka/monolit_gen/monolit"));
+        SourceRoot sourceRoot = new SourceRoot(Path.of(generatedPath));
         List<CompilationUnit> parseResults = null;
         try {
             parseResults = sourceRoot.tryToParse("").stream()
