@@ -23,7 +23,10 @@ import static com.tool.ClassInfoProcesser.*;
 import static com.tool.ParserUtils.getPrettyClassOrInterfaceName;
 
 public class Main {
-    public static void main(String[] args){
+    public static void main(String[] args) throws IOException {
+        String[] cmd = new String[]{"/bin/sh", "/home/marta/Desktop/Magisterka/graphSolverReflections/copy_project_resources.sh"};
+        Process pr = Runtime.getRuntime().exec(cmd);
+
         Reflections reflections = new Reflections(
                 new ConfigurationBuilder()
                         .setScanners(new SubTypesScanner(false /* don't exclude Object.class */), new ResourcesScanner())
@@ -48,7 +51,7 @@ public class Main {
     }
 
     private static List<CompilationUnit> parseWithJavaParser() {
-        SourceRoot sourceRoot = new SourceRoot(Path.of("/home/marta/Desktop/Magisterka/monolit"));
+        SourceRoot sourceRoot = new SourceRoot(Path.of("/home/marta/Desktop/Magisterka/monolit_backup/monolit"));
         List<CompilationUnit> parseResults = null;
         try {
             parseResults = sourceRoot.tryToParse("").stream()
