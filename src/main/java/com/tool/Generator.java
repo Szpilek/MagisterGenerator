@@ -12,6 +12,10 @@ import com.tool.communication_model.RemoteType;
 import javassist.bytecode.annotation.Annotation;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.Profile;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.web.client.RestTemplate;
 
 import java.io.*;
 import java.lang.reflect.Field;
@@ -58,6 +62,13 @@ public class Generator {
             "import java.io.InputStream;",
             "import java.io.OutputStream;",
             "import java.util.stream.Collectors;"
+    );
+
+    static String clientImports = multilineString(
+            "import org.springframework.http.HttpEntity;",
+            "import org.springframework.web.client.RestTemplate;",
+            "import org.springframework.http.HttpHeaders;",
+            "import org.springframework.http.MediaType;"
     );
 
     public static void generateClients(Map<Class<?>, List<Class<?>>> dependenciesFromProject, List<CompilationUnit> compilationUnits, Class<?> homeClass) {
@@ -216,6 +227,7 @@ public class Generator {
                         clazz.getPackage().toString() + ";",
                         imports,
                         customImports,
+                        clientImports,
                         profiles,
                         "public class " + interfaceName + "Client implements " + interfaceName + "{",
                         methodInfos.stream().map(Generator::methodForClient).collect(Collectors.joining()),
@@ -223,7 +235,11 @@ public class Generator {
                     );
         writeFile(home, clazz.getName().replace(".", "/") + "Client.java", s);
     }
-
+//    RestTemplate restTemplate = new RestTemplate();
+//    HttpHeaders headers = new HttpHeaders();
+//            headers.setContentType(MediaType.APPLICATION_JSON);
+//    HttpEntity<String> request = new HttpEntity<String>(body, headers);
+//    String resultJsonStr = restTemplate.postForObject(lambdaUrl, request, String.class);
     private static String methodForClient(MethodInfo mi) {
         return multilineString(
                 "@Override\n" + Modifier.toString(mi.getMethod().getModifiers()).replace("abstract", ""),
@@ -251,6 +267,11 @@ public class Generator {
                 "ObjectMapper mapper = new ObjectMapper();",
                 "try {",
                     "String body = mapper.writeValueAsString("+ remoteCall + ");",
+                    "RestTemplate restTemplate = new RestTemplate();",
+                    "HttpHeaders headers = new HttpHeaders();",
+                    "headers.setContentType(MediaType.APPLICATION_JSON);",
+                    "HttpEntity<String> request = new HttpEntity<String>(body, headers);",
+                    "String resultJsonStr = restTemplate.postForObject(lambdaUrl, request, String.class);",
                     "String mockReturn = \"{}\";",
                     returnValue,
                 "} catch (JsonProcessingException e) {",
