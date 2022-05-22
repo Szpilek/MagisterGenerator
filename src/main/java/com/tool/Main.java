@@ -1,6 +1,5 @@
 package com.tool;
 
-import com.github.javaparser.ParseResult;
 import com.github.javaparser.ast.CompilationUnit;
 import com.github.javaparser.utils.SourceRoot;
 import org.reflections.Reflections;
@@ -13,15 +12,12 @@ import org.springframework.stereotype.Service;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Path;
-import java.util.Collection;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Set;
-import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
-import static com.tool.ClassInfoProcesser.*;
-import static com.tool.ParserUtils.getPrettyClassOrInterfaceName;
+import static com.tool.ClassInfoProcesser.createDependencyMap;
+import static com.tool.ClassInfoProcesser.findSpringBootApplicationClass;
 
 public class Main {
     public static void main(String[] args) throws IOException {

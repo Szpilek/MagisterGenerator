@@ -1,42 +1,24 @@
 package com.tool;
 
-import com.example.monolit.MonolitApplication;
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.JavaType;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.javaparser.ast.CompilationUnit;
-import com.github.javaparser.ast.expr.AnnotationExpr;
-import com.tool.communication_model.RemoteCall;
-import com.tool.communication_model.RemoteArgument;
-import com.tool.communication_model.RemoteType;
-import javassist.bytecode.annotation.Annotation;
-import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.Profile;
-import org.springframework.http.*;
-import org.springframework.web.client.RestTemplate;
 
-import java.io.*;
-import java.lang.reflect.Field;
-import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.Method;
+import java.io.File;
+import java.io.IOException;
 import java.lang.reflect.Modifier;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Paths;
-import java.nio.file.StandardCopyOption;
 import java.util.*;
 import java.util.stream.Collectors;
 
-import static com.tool.ParserUtils.getPrettyClassOrInterfaceName;
-import static com.tool.Utils.*;
 import static com.tool.ParserUtils.*;
+import static com.tool.Utils.*;
 
 public class Generator {
     public static List<MethodInfo> methodInfos = new ArrayList<>();
 
     // TODO nie hardcodować
-    public final static String home = "/home/marta/Desktop/Magisterka/monolit/src/main/java/";
+    public final static String source_project_home = "/home/marta/Desktop/Magisterka/monolit/src/main/java/";
     public static String customImports = multilineString(
             "import com.fasterxml.jackson.databind.ObjectMapper;",
             "import com.fasterxml.jackson.core.type.TypeReference;",
@@ -97,7 +79,7 @@ public class Generator {
             var clazz = getClassOrInterface(getPrettyClassOrInterfaceName(it), compilationUnits);
             clazz.addSingleMemberAnnotation(Profile.class, quoted(getPrettyClassOrInterfaceName(it)));
             clazz.tryAddImportToParentCompilationUnit(Profile.class);
-            writeFile(home, it.getName().replace(".", "/") + ".java", clazz.getParentNode().get().toString());
+            writeFile(source_project_home, it.getName().replace(".", "/") + ".java", clazz.getParentNode().get().toString());
         });
 
         compilationUnits.forEach(it -> System.out.println(it));
@@ -173,7 +155,7 @@ public class Generator {
         "        );",
         "    }",
         "}");
-        writeFile(home, clazz.getName().replace(".", "/") + "Lambda.java", classString);
+        writeFile(source_project_home, clazz.getName().replace(".", "/") + "Lambda.java", classString);
     }
 
 
@@ -203,13 +185,14 @@ public class Generator {
 
     public static void copyModelFile(String className) {
         try {
-            File targetFile = new File(home + "com/tool/communication_model/"+ className +".java");
+            File targetFile = new File(source_project_home + "com/tool/communication_model/"+ className +".java");
             targetFile.getParentFile().mkdirs();
-            Files.copy(
+            var classFileBytes = Generator.class.getClassLoader().getResourceAsStream(className + ".java").readAllBytes();
+            //                    Paths.get("/home/marta/Desktop/Magisterka/graphSolverReflections/src/main/java/com/tool/communication_model/"+ className +".java"),
+            Files.write(
                     // TODO nie hardcodować
-                    Paths.get("/home/marta/Desktop/Magisterka/graphSolverReflections/src/main/java/com/tool/communication_model/"+ className +".java"),
-                    Paths.get(home + "com/tool/communication_model/"+ className +".java"),
-                    StandardCopyOption.REPLACE_EXISTING);
+                    Paths.get(source_project_home + "com/tool/communication_model/"+ className +".java"),
+                    classFileBytes);
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
@@ -233,7 +216,7 @@ public class Generator {
                         methodInfos.stream().map(it -> methodForClient(it, interfaceName)).collect(Collectors.joining()),
                         "}"
                     );
-        writeFile(home, clazz.getName().replace(".", "/") + "Client.java", s);
+        writeFile(source_project_home, clazz.getName().replace(".", "/") + "Client.java", s);
     }
 
     private static String methodForClient(MethodInfo mi, String serviceName) {

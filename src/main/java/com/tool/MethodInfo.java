@@ -1,7 +1,7 @@
 package com.tool;
 
-import java.util.List;
 import java.lang.reflect.Method;
+import java.util.List;
 
 public class MethodInfo {
     Method method;
