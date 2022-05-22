@@ -1,41 +1,23 @@
 package com.tool;
 
-import com.github.javaparser.Problem;
-import com.github.javaparser.ast.CompilationUnit;
-import com.github.javaparser.utils.SourceRoot;
-import org.reflections.Reflections;
-import org.reflections.scanners.ResourcesScanner;
-import org.reflections.scanners.SubTypesScanner;
-import org.reflections.util.ClasspathHelper;
-import org.reflections.util.ConfigurationBuilder;
-import org.springframework.stereotype.Service;
-
 import java.io.File;
-import java.io.IOException;
-import java.io.ObjectInputFilter;
-import java.nio.file.Path;
-import java.util.Arrays;
 import java.util.List;
 import java.util.Scanner;
 import java.util.Set;
-import java.util.stream.Collectors;
-
-import static com.tool.ClassInfoProcesser.createDependencyMap;
-import static com.tool.ClassInfoProcesser.findSpringBootApplicationClass;
 
 public class Main {
     public static void main(String[] args) throws Exception {
         copyProject();
         Set<Class<?>> allClasses = ReflectionUtils.getApplicationClasses();
         var serviceClasses = ReflectionUtils.findServiceClasses(allClasses);
-        List<ClassInfo> classInfos = Utils.map(serviceClasses, ClassInfoProcesser::toClassInfo);
-        var serviceToServiceDependencies = ClassInfoProcesser.createDependencyMap(classInfos);
+        List<ClassInfo> classInfos = Utils.map(serviceClasses, ClassInfoProcessor::toClassInfo);
+        var serviceToServiceDependencies = ClassInfoProcessor.createDependencyMap(classInfos);
 
         var parseResults = JavaParser.parse(Configuration.TARGET_PROJECT_PATH);
 
         Generator.generateCommunicationModel();
         Generator.generateSpringProfiles(serviceToServiceDependencies, parseResults);
-        Generator.generateClients(serviceToServiceDependencies, parseResults, findSpringBootApplicationClass(allClasses));
+        Generator.generateClients(serviceToServiceDependencies, parseResults, ReflectionUtils.findSpringBootApplicationClass(allClasses));
     }
 
     static void copyProject() throws Exception {
