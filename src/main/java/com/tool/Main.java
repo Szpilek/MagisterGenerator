@@ -11,8 +11,11 @@ import org.springframework.stereotype.Service;
 
 import java.io.File;
 import java.io.IOException;
+import java.io.ObjectInputFilter;
 import java.nio.file.Path;
+import java.util.Arrays;
 import java.util.List;
+import java.util.Scanner;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -20,19 +23,11 @@ import static com.tool.ClassInfoProcesser.createDependencyMap;
 import static com.tool.ClassInfoProcesser.findSpringBootApplicationClass;
 
 public class Main {
-    public static void main(String[] args) throws IOException {
+    public static void main(String[] args) throws Exception {
         if(args[0] == null || args[0].equals("")){
             throw new RuntimeException("Incorrect path");
         }
-        String projectPath = args[0];
-        String generatedPath = projectPath + "_gen";
-        boolean wasProjectAlreadyGenerated = new File(generatedPath).exists();
-        if(wasProjectAlreadyGenerated){
-            throw new RuntimeException("Project already generated");
-        }
-        String[] cmd = new String[]{"cp", "-R", projectPath, generatedPath};
-        Process pr = Runtime.getRuntime().exec(cmd);
-
+        copyProject();
         Reflections reflections = new Reflections(
                 new ConfigurationBuilder()
                         .setScanners(new SubTypesScanner(false /* don't exclude Object.class */), new ResourcesScanner())
@@ -50,10 +45,27 @@ public class Main {
                 .collect(Collectors.toList());
 
         var serviceToServiceDependencies = createDependencyMap(classInfos);
-        var parseResults = parseWithJavaParser(generatedPath);
+        var parseResults = parseWithJavaParser(Configuration.TARGET_PROJECT_PATH);
         Generator.generateCommunicationModel();
         Generator.generateSpringProfiles(serviceToServiceDependencies, parseResults);
         Generator.generateClients(serviceToServiceDependencies, parseResults, springBootApplicationClazz);
+    }
+
+    static void copyProject() throws Exception {
+        boolean wasProjectAlreadyGenerated = new File(Configuration.TARGET_PROJECT_PATH).exists();
+        if(wasProjectAlreadyGenerated){
+            System.out.print("Target project path: " + Configuration.TARGET_PROJECT_PATH +  "already exists");
+            System.out.println("Do You want to remove it? [Y/n]");
+            Scanner input = new Scanner(System.in);
+            var answer = input.nextLine().trim().toUpperCase();
+            if ("Y".equals(answer) || "".equals(answer)) {
+                System.out.println("Attempting to remove " + Configuration.TARGET_PROJECT_PATH);
+                CommandLine.executeCommand("rm", "-rf", Configuration.TARGET_PROJECT_PATH);
+            } else {
+                throw new RuntimeException("Project already generated");
+            }
+        }
+        CommandLine.executeCommand("cp", "-R", Configuration.SOURCE_PROJECT_PATH, Configuration.TARGET_PROJECT_PATH);
     }
 
     private static List<CompilationUnit> parseWithJavaParser(String generatedPath) {
