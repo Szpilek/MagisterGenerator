@@ -11,7 +11,7 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 public class ClassInfoProcesser {
-    public static ClassInfo processClass(Class<?> it){
+    public static ClassInfo toClassInfo(Class<?> it){
         return new ClassInfo(getAutowiredFields(it), getConstructorArgs(it), it);
     }
 

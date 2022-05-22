@@ -47,19 +47,15 @@ public class ParserUtils {
         return true;
     }
 
-    public static String getPrettyClassOrInterfaceName(Class<?> clazz){
-        return clazz.getName().replace(clazz.getPackageName() + ".", "");
-    }
+
 
     public static String getReturnType(Method method, List<CompilationUnit> parseResults) {
-        var classOrInterface = getClassOrInterface(getMethodClassName(method), parseResults);
+        var classOrInterface = getClassOrInterface(ReflectionUtils.getMethodClassName(method), parseResults);
         var methodDeclaration = getMethod(method, classOrInterface);
         return methodDeclaration.getType().asString();
     }
 
-    public static String getMethodClassName(Method method){
-        return Arrays.stream(method.getDeclaringClass().getName().split("[.]")).reduce((first, second) -> second).get();
-    }
+
 
     public static String getImports(Class<?> clazz, List<CompilationUnit> parseResults){
         String clazzName = Arrays.stream(clazz.getName().split("[.]")).reduce((first, second) -> second).get();
@@ -69,7 +65,7 @@ public class ParserUtils {
     }
 
     public static List<ParameterInfo> getParameters(Method method, List<CompilationUnit> parseResults) {
-        var classOrInterface = getClassOrInterface(getMethodClassName(method), parseResults);
+        var classOrInterface = getClassOrInterface(ReflectionUtils.getMethodClassName(method), parseResults);
         var methodInfo = getMethod(method, classOrInterface);
         return methodInfo.getParameters().stream().map(it -> new ParameterInfo(it.getType().asString(), it.getNameAsString())).collect(Collectors.toList());
     }

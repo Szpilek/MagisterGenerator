@@ -57,7 +57,7 @@ public class Generator {
                     .map(method -> {
                         String returnType = getReturnType(method, compilationUnits);
                         List<ParameterInfo> parameterInfos = getParameters(method, compilationUnits);
-                        return new MethodInfo(method, method.getName(), parameterInfos, returnType, getMethodClassName(method), method.getDeclaringClass().getPackageName());
+                        return new MethodInfo(method, method.getName(), parameterInfos, returnType, ReflectionUtils.getMethodClassName(method), method.getDeclaringClass().getPackageName());
                     }).collect(Collectors.toList());
             String imports = getImports(clazz, compilationUnits);
             var profiles = findSpringProfilesForClient(dependenciesFromProject, clazz);
@@ -73,8 +73,8 @@ public class Generator {
 
     public static void generateSpringProfiles(Map<Class<?>, List<Class<?>>> dependenciesFromProject, List<CompilationUnit> compilationUnits){
         dependenciesFromProject.keySet().forEach((it) -> {
-            var clazz = getClassOrInterface(getPrettyClassOrInterfaceName(it), compilationUnits);
-            clazz.addSingleMemberAnnotation(Profile.class, quoted(getPrettyClassOrInterfaceName(it)));
+            var clazz = getClassOrInterface(ReflectionUtils.getPrettyClassOrInterfaceName(it), compilationUnits);
+            clazz.addSingleMemberAnnotation(Profile.class, quoted(ReflectionUtils.getPrettyClassOrInterfaceName(it)));
             clazz.tryAddImportToParentCompilationUnit(Profile.class);
             writeFile(Configuration.TARGET_JAVA_PATH, it.getName().replace(".", "/") + ".java", clazz.getParentNode().get().toString());
         });
@@ -87,7 +87,7 @@ public class Generator {
                 .filter(key ->
                         dependenciesFromProject.get(key)
                                 .stream().anyMatch(value -> value.isAssignableFrom(clazz)))
-                .map(ParserUtils::getPrettyClassOrInterfaceName)
+                .map(ReflectionUtils::getPrettyClassOrInterfaceName)
                 .map(it -> "@Profile(" + quoted(it) + ")")
                 .collect(Collectors.joining("\n"));
     }
@@ -99,11 +99,11 @@ public class Generator {
         imports,
         customImports,
         wrapperImports,
-        "public class "+ ParserUtils.getPrettyClassOrInterfaceName(clazz) + "Lambda implements RequestStreamHandler {",
+        "public class "+ ReflectionUtils.getPrettyClassOrInterfaceName(clazz) + "Lambda implements RequestStreamHandler {",
         "    private static ApplicationContext context;",
         "    static {",
         "        try {",
-        "            var a = SpringBootLambdaContainerHandler.getAwsProxyHandler(" + getPrettyClassOrInterfaceName(homeClass) + ".class, "+ quoted(getPrettyClassOrInterfaceName(clazz)) + ");",
+        "            var a = SpringBootLambdaContainerHandler.getAwsProxyHandler(" + ReflectionUtils.getPrettyClassOrInterfaceName(homeClass) + ".class, "+ quoted(ReflectionUtils.getPrettyClassOrInterfaceName(clazz)) + ");",
         "            Field field = SpringBootLambdaContainerHandler.class.getDeclaredField(\"applicationContext\");",
         "            field.setAccessible(true);",
         "            context = (ApplicationContext) field.get(a);",

@@ -12,6 +12,7 @@ public class Configuration {
     static String TARGET_PROJECT_PATH = getEnv("TARGET_PROJECT_PATH");
     static String SOURCE_JAVA_PATH = SOURCE_PROJECT_PATH + "/" + PATH_TO_JAVA_FILES;
     static String TARGET_JAVA_PATH = TARGET_PROJECT_PATH + "/" + PATH_TO_JAVA_FILES;
+    static String APPLICATION_PACKAGE  = getEnv("APPLICATION_PACKAGE");
     static String getEnv(String env) {
         return getEnv(env, Optional.empty());
     }

@@ -15,17 +15,19 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 public class Utils {
-    public static <T> boolean  anyMatch(Collection<T> coll, Predicate<T> predicate) {
+    public static <A> boolean  anyMatch(Collection<A> coll, Predicate<A> predicate) {
         return coll.stream().anyMatch(predicate);
     }
 
-    public static <T> Set<T> combineToSet(Collection<T> coll1, Collection<T> coll2 ) {
+    public static <A> Set<A> combineToSet(Collection<A> coll1, Collection<A> coll2 ) {
         return Stream.concat(coll1.stream(), coll2.stream())
                 .collect(Collectors.toSet());
     }
 
-    public static <T, N> List<N> map(Collection<T> coll, Function<T, N> function){
-        return coll.stream().map(function).collect(Collectors.toList());
+    public static <A, B> List<B> map(Collection<A> collection, Function<A, B> function){
+        return collection.stream()
+                .map(function)
+                .collect(Collectors.toList());
     }
 
     static void writeFile(String filePath, String fileName, String content) {
