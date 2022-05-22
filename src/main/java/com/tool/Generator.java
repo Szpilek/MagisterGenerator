@@ -2,6 +2,7 @@ package com.tool;
 
 import com.example.monolit.MonolitApplication;
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JavaType;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.javaparser.ast.CompilationUnit;
@@ -12,9 +13,7 @@ import com.tool.communication_model.RemoteType;
 import javassist.bytecode.annotation.Annotation;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.Profile;
-import org.springframework.http.HttpEntity;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.MediaType;
+import org.springframework.http.*;
 import org.springframework.web.client.RestTemplate;
 
 import java.io.*;
@@ -121,7 +120,7 @@ public class Generator {
         imports,
         customImports,
         wrapperImports,
-        "public class StreamLambdaHandler implements RequestStreamHandler {",
+        "public class "+ ParserUtils.getPrettyClassOrInterfaceName(clazz) + "Lambda implements RequestStreamHandler {",
         "    private static ApplicationContext context;",
         "    static {",
         "        try {",
@@ -230,23 +229,20 @@ public class Generator {
                         clientImports,
                         profiles,
                         "public class " + interfaceName + "Client implements " + interfaceName + "{",
-                        methodInfos.stream().map(Generator::methodForClient).collect(Collectors.joining()),
+                        "String lambdaUrl = System.getenv(\""+ interfaceName +"Url\");",
+                        methodInfos.stream().map(it -> methodForClient(it, interfaceName)).collect(Collectors.joining()),
                         "}"
                     );
         writeFile(home, clazz.getName().replace(".", "/") + "Client.java", s);
     }
-//    RestTemplate restTemplate = new RestTemplate();
-//    HttpHeaders headers = new HttpHeaders();
-//            headers.setContentType(MediaType.APPLICATION_JSON);
-//    HttpEntity<String> request = new HttpEntity<String>(body, headers);
-//    String resultJsonStr = restTemplate.postForObject(lambdaUrl, request, String.class);
-    private static String methodForClient(MethodInfo mi) {
+
+    private static String methodForClient(MethodInfo mi, String serviceName) {
         return multilineString(
                 "@Override\n" + Modifier.toString(mi.getMethod().getModifiers()).replace("abstract", ""),
                 " " + mi.getReturnType() + " " + mi.getName(),
                 " (" + mi.getParameters().stream().map(it -> it.getType() + " " + it.getName()).collect(Collectors.joining(", ")),
                 "){",
-                clientMethodBody(mi, "asd"),
+                clientMethodBody(mi, serviceName),
                 "}"
         );
     }
@@ -261,7 +257,7 @@ public class Generator {
 
         String returnValue = "void".equals(mi.getReturnType())
                 ? ""
-                : "return mapper.readValue(mockReturn, new TypeReference<"+ mi.getReturnType() +">(){});";
+                : "return mapper.readValue(responseEntity.getBody(), new TypeReference<"+ mi.getReturnType() +">(){});";
 
         return multilineString(
                 "ObjectMapper mapper = new ObjectMapper();",
@@ -271,9 +267,12 @@ public class Generator {
                     "HttpHeaders headers = new HttpHeaders();",
                     "headers.setContentType(MediaType.APPLICATION_JSON);",
                     "HttpEntity<String> request = new HttpEntity<String>(body, headers);",
-                    "String resultJsonStr = restTemplate.postForObject(lambdaUrl, request, String.class);",
-                    "String mockReturn = \"{}\";",
+                    "ResponseEntity<String> responseEntity = restTemplate.postForEntity(lambdaUrl, request, String.class);",
+                    "if(HttpStatus.OK == responseEntity.getStatusCode()){",
                     returnValue,
+                    "} else {",
+                    "throw new RuntimeException(\"Unexpected HTTP Status \" + responseEntity.getStatusCode());",
+                    "}",
                 "} catch (JsonProcessingException e) {",
 //                    TODO throw custom error ?
                      "throw new RuntimeException(e);",
