@@ -1,44 +1,40 @@
 package com.tool;
 
-import org.reflections.Reflections;
-import org.reflections.scanners.ResourcesScanner;
-import org.reflections.scanners.SubTypesScanner;
-import org.reflections.util.ClasspathHelper;
-import org.reflections.util.ConfigurationBuilder;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.stereotype.Service;
-
-import java.lang.annotation.Annotation;
-import java.lang.reflect.Field;
-import java.lang.reflect.InvocationTargetException;
-import java.net.MalformedURLException;
-import java.net.URLClassLoader;
-import java.util.Arrays;
+import java.io.File;
 import java.util.List;
+import java.util.Scanner;
 import java.util.Set;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
-
-import static com.tool.ClassInfoProcesser.*;
 
 public class Main {
-    public static void main(String[] args){
-        Reflections reflections = new Reflections(
-                new ConfigurationBuilder()
-                        .setScanners(new SubTypesScanner(false /* don't exclude Object.class */), new ResourcesScanner())
-                        .setUrls(ClasspathHelper.forPackage("com.example"))
-        );
+    public static void main(String[] args) throws Exception {
+        copyProject();
+        Set<Class<?>> allClasses = ReflectionUtils.getApplicationClasses();
+        var serviceClasses = ReflectionUtils.findServiceClasses(allClasses);
+        List<ClassInfo> classInfos = Utils.map(serviceClasses, ClassInfoProcessor::toClassInfo);
+        var serviceToServiceDependencies = ClassInfoProcessor.createDependencyMap(classInfos);
 
-       //Zbierać tylko klasy annotowane service
-        Set<Class<?>> allClasses = reflections.getSubTypesOf(Object.class);
-        var serviceClasses = allClasses.stream()
-                .filter(it -> it.isAnnotationPresent(Service.class))
-                .collect(Collectors.toList());
-        List<ClassInfo> classInfos = serviceClasses.stream()
-                .map(ClassInfoProcesser::processClass)
-                .collect(Collectors.toList());
+        var parseResults = JavaParser.parse(Configuration.TARGET_PROJECT_PATH);
 
-        var dependenciesFromProject = getDependencies(classInfos);
+        Generator.generateCommunicationModel();
+        Generator.generateSpringProfiles(serviceToServiceDependencies, parseResults);
+        Generator.generateClients(serviceToServiceDependencies, parseResults, ReflectionUtils.findSpringBootApplicationClass(allClasses));
+    }
 
+    static void copyProject() throws Exception {
+        boolean wasProjectAlreadyGenerated = new File(Configuration.TARGET_PROJECT_PATH).exists();
+        if(wasProjectAlreadyGenerated){
+            System.out.print("Target project path: " + Configuration.TARGET_PROJECT_PATH +  "already exists");
+            System.out.println("Do You want to remove it? [Y/n]");
+            Scanner input = new Scanner(System.in);
+            var answer = input.nextLine().trim().toUpperCase();
+            if ("Y".equals(answer) || "".equals(answer)) {
+                System.out.println("Attempting to remove " + Configuration.TARGET_PROJECT_PATH);
+                CommandLine.executeCommand("rm", "-rf", Configuration.TARGET_PROJECT_PATH);
+            } else {
+                throw new RuntimeException("Project already generated");
+            }
+        }
+        CommandLine.executeCommand("cp", "-R", Configuration.SOURCE_PROJECT_PATH, Configuration.TARGET_PROJECT_PATH);
     }
 }
+
