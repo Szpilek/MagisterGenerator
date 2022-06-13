@@ -10,7 +10,9 @@ public class Main {
         copyProject();
         Set<Class<?>> allClasses = ReflectionUtils.getApplicationClasses();
         var serviceClasses = ReflectionUtils.findServiceClasses(allClasses);
+        var controllerClasses = ReflectionUtils.findControllerClasses(allClasses);
         List<ClassInfo> classInfos = Utils.map(serviceClasses, ClassInfoProcessor::toClassInfo);
+        List<ClassInfo> controllerClassInfos = Utils.map(controllerClasses, ClassInfoProcessor::toClassInfo);
         var serviceToServiceDependencies = ClassInfoProcessor.createDependencyMap(classInfos);
 
         var parseResults = JavaParser.parse(Configuration.TARGET_PROJECT_PATH);
@@ -18,6 +20,8 @@ public class Main {
         Generator.generateCommunicationModel();
         Generator.generateSpringProfiles(serviceToServiceDependencies, parseResults);
         Generator.generateClients(serviceToServiceDependencies, parseResults, ReflectionUtils.findSpringBootApplicationClass(allClasses));
+        Generator.generateSpringProfilesForController(Utils.map(controllerClassInfos, ClassInfo::getClazz), parseResults, ReflectionUtils.findSpringBootApplicationClass(allClasses));
+        Generator.generateController(Utils.map(controllerClassInfos, ClassInfo::getClazz), parseResults, ReflectionUtils.findSpringBootApplicationClass(allClasses));
     }
 
     static void copyProject() throws Exception {

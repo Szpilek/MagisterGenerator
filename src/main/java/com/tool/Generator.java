@@ -15,6 +15,7 @@ import static com.tool.ParserUtils.*;
 import static com.tool.Utils.*;
 import static com.tool.Configuration.SOURCE_PROJECT_PATH;
 import static com.tool.Configuration.TARGET_PROJECT_PATH;
+
 public class Generator {
     // TODO nie hardcodować
 //    public final static String source_project_home = "/home/marta/Desktop/Magisterka/monolit/src/main/java/";
@@ -23,7 +24,7 @@ public class Generator {
             "import com.fasterxml.jackson.core.type.TypeReference;",
             "import com.fasterxml.jackson.core.JsonProcessingException;",
             "import com.tool.communication_model.RemoteType;",
-            "import com.tool.communication_model.RemoteArgument;" ,
+            "import com.tool.communication_model.RemoteArgument;",
             "import com.tool.communication_model.RemoteCall;",
             "import org.springframework.context.annotation.Profile;"
     );
@@ -49,6 +50,27 @@ public class Generator {
             "import org.springframework.http.*;"
     );
 
+    static String controllerImports = multilineString(
+            "import java.io.IOException;",
+            "import java.io.InputStream;",
+            "import java.io.OutputStream;",
+            "import com.amazonaws.services.lambda.runtime.Context;",
+            "import com.amazonaws.services.lambda.runtime.RequestStreamHandler;",
+            "import com.amazonaws.serverless.proxy.model.AwsProxyRequest;",
+            "import com.amazonaws.serverless.proxy.model.AwsProxyResponse;",
+            "import com.amazonaws.serverless.proxy.spring.SpringBootLambdaContainerHandler;"
+    );
+
+    public static void generateController(List<Class<?>> controllerClasses, List<CompilationUnit> compilationUnits, Class<?> homeClass) {
+
+        String s = multilineString(
+                homeClass.getPackage().toString() + ";",
+                controllerImports,
+                generateControllerLambda(homeClass)
+        );
+        writeFile(Configuration.TARGET_JAVA_PATH, homeClass.getPackageName().replace(".", "/") + "/ControllerLambda.java", s);
+    }
+
     public static void generateClients(Map<Class<?>, List<Class<?>>> dependenciesFromProject, List<CompilationUnit> compilationUnits, Class<?> homeClass) {
         Set<Class<?>> dependenciesToCreateClient = new HashSet<>();
         dependenciesFromProject.values().forEach(dependenciesToCreateClient::addAll);
@@ -71,7 +93,7 @@ public class Generator {
         });
     }
 
-    public static void generateSpringProfiles(Map<Class<?>, List<Class<?>>> dependenciesFromProject, List<CompilationUnit> compilationUnits){
+    public static void generateSpringProfiles(Map<Class<?>, List<Class<?>>> dependenciesFromProject, List<CompilationUnit> compilationUnits) {
         dependenciesFromProject.keySet().forEach((it) -> {
             var clazz = getClassOrInterface(ReflectionUtils.getPrettyClassOrInterfaceName(it), compilationUnits);
             clazz.addSingleMemberAnnotation(Profile.class, quoted(ReflectionUtils.getPrettyClassOrInterfaceName(it)));
@@ -82,7 +104,20 @@ public class Generator {
         compilationUnits.forEach(it -> System.out.println(it));
     }
 
-    private static String findSpringProfilesForClient(Map<Class<?>, List<Class<?>>> dependenciesFromProject, Class<?> clazz){
+    public static void generateSpringProfilesForController(List<Class<?>> controllerClasses, List<CompilationUnit> compilationUnits, Class<?> homeClass) {
+        controllerClasses.stream()
+                .filter(it -> it.getPackageName().contains(homeClass.getPackageName()))
+                .forEach(it -> {
+                    var clazz = getClassOrInterface(ReflectionUtils.getPrettyClassOrInterfaceName(it), compilationUnits);
+                    clazz.addSingleMemberAnnotation(Profile.class, quoted("Controller"));
+                    clazz.tryAddImportToParentCompilationUnit(Profile.class);
+                    writeFile(Configuration.TARGET_JAVA_PATH, it.getName().replace(".", "/") + ".java", clazz.getParentNode().get().toString());
+                });
+
+        compilationUnits.forEach(it -> System.out.println(it));
+    }
+
+    private static String findSpringProfilesForClient(Map<Class<?>, List<Class<?>>> dependenciesFromProject, Class<?> clazz) {
         return dependenciesFromProject.keySet().stream()
                 .filter(key ->
                         dependenciesFromProject.get(key)
@@ -92,75 +127,72 @@ public class Generator {
                 .collect(Collectors.joining("\n"));
     }
 
-    private static void generateServiceWrapper(Class<?> clazz, String imports, Class<?> homeClass ) {
-       String classString = multilineString(
-        clazz.getPackage() + ";",
-        "import " + homeClass.getName() + ";",
-        imports,
-        customImports,
-        wrapperImports,
-        "public class "+ ReflectionUtils.getPrettyClassOrInterfaceName(clazz) + "Lambda implements RequestStreamHandler {",
-        "    private static ApplicationContext context;",
-        "    static {",
-        "        try {",
-        "            var a = SpringBootLambdaContainerHandler.getAwsProxyHandler(" + ReflectionUtils.getPrettyClassOrInterfaceName(homeClass) + ".class, "+ quoted(ReflectionUtils.getPrettyClassOrInterfaceName(clazz)) + ");",
-        "            Field field = SpringBootLambdaContainerHandler.class.getDeclaredField(\"applicationContext\");",
-        "            field.setAccessible(true);",
-        "            context = (ApplicationContext) field.get(a);",
-        "        } catch (ContainerInitializationException | NoSuchFieldException | IllegalAccessException e) {",
-        "            e.printStackTrace();",
-        "            throw new RuntimeException(e);",
-        "        }",
-        "    }",
-        "    private ObjectMapper objectMapper = new ObjectMapper();",
-        "    @Override",
-        "    public void handleRequest(InputStream inputStream, OutputStream outputStream, Context context)",
-        "            throws IOException {",
-        "        RemoteCall call = objectMapper.readValue(inputStream, RemoteCall.class);",
-        "        objectMapper.writeValue(outputStream, execute(call));",
-        "    }",
-        "    Object execute(RemoteCall call) {",
-        "        var arguments = call.getArguments().stream()",
-        "                .map(arg -> {",
-        "                    try {",
-        "                        return objectMapper.readValue(arg.getValue(), javaType(arg.getType()));",
-        "                    } catch (JsonProcessingException e) {",
-        "                        throw new RuntimeException(\"Cannot deserialize parameter\", e);",
-        "                    }",
-        "                }).collect(Collectors.toList());",
-        "        var argTypes = arguments.stream().map(Object::getClass).collect(Collectors.toList());",
-        "        var serviceBean  = context.getBean(call.getService());",
-        "        try {",
-        "            return serviceBean.getClass().getMethod(call.getMethod(), argTypes.toArray(Class[]::new))",
-        "            .invoke(serviceBean, arguments.toArray(Object[]::new));",
-        "        } catch (NoSuchMethodException | IllegalAccessException | InvocationTargetException e) {",
-        "            throw new RuntimeException(e);",
-        "        }",
-        "",
-        "    }",
-        "",
-        "    JavaType javaType(RemoteType remoteType) {",
-        "        var simpleType = objectMapper.getTypeFactory().constructFromCanonical(remoteType.getType());",
-        "        var typeParameters = remoteType.getParameters().stream()",
-        "                .map(it -> javaType(it))",
-        "                .collect(Collectors.toList());",
-        "        return remoteType.getParameters().isEmpty()",
-        "                ? simpleType",
-        "                : objectMapper.getTypeFactory().constructParametricType(",
-        "                simpleType.getRawClass(),",
-        "                typeParameters.toArray(JavaType[]::new)",
-        "        );",
-        "    }",
-        "}");
+    private static void generateServiceWrapper(Class<?> clazz, String imports, Class<?> homeClass) {
+        String classString = multilineString(
+                clazz.getPackage() + ";",
+                "import " + homeClass.getName() + ";",
+                imports,
+                customImports,
+                wrapperImports,
+                "public class " + ReflectionUtils.getPrettyClassOrInterfaceName(clazz) + "Lambda implements RequestStreamHandler {",
+                "    private static ApplicationContext context;",
+                "    static {",
+                "        try {",
+                "            var a = SpringBootLambdaContainerHandler.getAwsProxyHandler(" + ReflectionUtils.getPrettyClassOrInterfaceName(homeClass) + ".class, " + quoted(ReflectionUtils.getPrettyClassOrInterfaceName(clazz)) + ");",
+                "            Field field = SpringBootLambdaContainerHandler.class.getDeclaredField(\"applicationContext\");",
+                "            field.setAccessible(true);",
+                "            context = (ApplicationContext) field.get(a);",
+                "        } catch (ContainerInitializationException | NoSuchFieldException | IllegalAccessException e) {",
+                "            e.printStackTrace();",
+                "            throw new RuntimeException(e);",
+                "        }",
+                "    }",
+                "    private ObjectMapper objectMapper = new ObjectMapper();",
+                "    @Override",
+                "    public void handleRequest(InputStream inputStream, OutputStream outputStream, Context context)",
+                "            throws IOException {",
+                "        RemoteCall call = objectMapper.readValue(inputStream, RemoteCall.class);",
+                "        objectMapper.writeValue(outputStream, execute(call));",
+                "    }",
+                "    Object execute(RemoteCall call) {",
+                "        var arguments = call.getArguments().stream()",
+                "                .map(arg -> {",
+                "                    try {",
+                "                        return objectMapper.readValue(arg.getValue(), javaType(arg.getType()));",
+                "                    } catch (JsonProcessingException e) {",
+                "                        throw new RuntimeException(\"Cannot deserialize parameter\", e);",
+                "                    }",
+                "                }).collect(Collectors.toList());",
+                "        var argTypes = arguments.stream().map(Object::getClass).collect(Collectors.toList());",
+                "        var serviceBean  = context.getBean(call.getService());",
+                "        try {",
+                "            return serviceBean.getClass().getMethod(call.getMethod(), argTypes.toArray(Class[]::new))",
+                "            .invoke(serviceBean, arguments.toArray(Object[]::new));",
+                "        } catch (NoSuchMethodException | IllegalAccessException | InvocationTargetException e) {",
+                "            throw new RuntimeException(e);",
+                "        }",
+                "",
+                "    }",
+                "",
+                "    JavaType javaType(RemoteType remoteType) {",
+                "        var simpleType = objectMapper.getTypeFactory().constructFromCanonical(remoteType.getType());",
+                "        var typeParameters = remoteType.getParameters().stream()",
+                "                .map(it -> javaType(it))",
+                "                .collect(Collectors.toList());",
+                "        return remoteType.getParameters().isEmpty()",
+                "                ? simpleType",
+                "                : objectMapper.getTypeFactory().constructParametricType(",
+                "                simpleType.getRawClass(),",
+                "                typeParameters.toArray(JavaType[]::new)",
+                "        );",
+                "    }",
+                "}");
         writeFile(Configuration.TARGET_JAVA_PATH, clazz.getName().replace(".", "/") + "Lambda.java", classString);
     }
 
 
-
-
-
     private static void generateControllerWrapper(Class<?> clazz, String imports, List<MethodInfo> methodInfos) {
-        String s =multilineString(
+        String s = multilineString(
                 "public class StreamLambdaHandler implements RequestStreamHandler {",
                 "    private static SpringBootLambdaContainerHandler<AwsProxyRequest, AwsProxyResponse> handler;",
                 "    static {",
@@ -180,22 +212,41 @@ public class Generator {
                 "}");
     }
 
+    private static String generateControllerLambda(Class<?> homeClass) {
+        return multilineString(
+                "public class ControllerLambda implements RequestStreamHandler {",
+                "private static SpringBootLambdaContainerHandler<AwsProxyRequest, AwsProxyResponse> springHandler;",
+                "static {",
+                "try {",
+                "springHandler = SpringBootLambdaContainerHandler.getAwsProxyHandler(" + ReflectionUtils.getPrettyClassOrInterfaceName(homeClass) + ".class, " + quoted("Controller") + ");",
+                "} catch (Exception e) {",
+                "e.printStackTrace();",
+                "throw new RuntimeException(e);",
+                "}",
+                "}",
+                "public void handleRequest(InputStream input, OutputStream output, final Context context) throws IOException {",
+                "springHandler.proxyStream(input, output, context);",
+                "}",
+                "}"
+        );
+    }
+
     public static void copyModelFile(String className) {
         try {
-            File targetFile = new File(Configuration.TARGET_JAVA_PATH + "com/tool/communication_model/"+ className +".java");
+            File targetFile = new File(Configuration.TARGET_JAVA_PATH + "com/tool/communication_model/" + className + ".java");
             targetFile.getParentFile().mkdirs();
             var classFileBytes = Generator.class.getClassLoader().getResourceAsStream(className + ".java").readAllBytes();
             //                    Paths.get("/home/marta/Desktop/Magisterka/graphSolverReflections/src/main/java/com/tool/communication_model/"+ className +".java"),
             Files.write(
                     // TODO nie hardcodować
-                    Paths.get(Configuration.TARGET_JAVA_PATH + "com/tool/communication_model/"+ className +".java"),
+                    Paths.get(Configuration.TARGET_JAVA_PATH + "com/tool/communication_model/" + className + ".java"),
                     classFileBytes);
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
     }
 
-    public static void generateCommunicationModel(){
+    public static void generateCommunicationModel() {
         List.of("RemoteArgument", "RemoteCall", "RemoteType")
                 .forEach(Generator::copyModelFile);
     }
@@ -203,16 +254,16 @@ public class Generator {
     private static void generateClient(Class<?> clazz, String imports, List<MethodInfo> methodInfos, String profiles) {
         String interfaceName = clazz.getName().replace(clazz.getPackageName() + ".", "");
         String s = multilineString(
-                        clazz.getPackage().toString() + ";",
-                        imports,
-                        customImports,
-                        clientImports,
-                        profiles,
-                        "public class " + interfaceName + "Client implements " + interfaceName + "{",
-                        "String lambdaUrl = System.getenv(\""+ interfaceName +"Url\");",
-                        methodInfos.stream().map(it -> methodForClient(it, interfaceName)).collect(Collectors.joining()),
-                        "}"
-                    );
+                clazz.getPackage().toString() + ";",
+                imports,
+                customImports,
+                clientImports,
+                profiles,
+                "public class " + interfaceName + "Client implements " + interfaceName + "{",
+                "String lambdaUrl = System.getenv(\"" + interfaceName + "Url\");",
+                methodInfos.stream().map(it -> methodForClient(it, interfaceName)).collect(Collectors.joining()),
+                "}"
+        );
         writeFile(Configuration.TARGET_JAVA_PATH, clazz.getName().replace(".", "/") + "Client.java", s);
     }
 
@@ -228,34 +279,34 @@ public class Generator {
     }
 
     private static String clientMethodBody(MethodInfo mi, String serviceName) {
-        String remoteCall = instantiate("RemoteCall" ,
-                                quoted(serviceName),
-                                quoted(mi.getName()),
-                        "List.of(" +
-                                mi.getParameters().stream().map(Generator::serializeParameter).collect(Collectors.joining(","))
+        String remoteCall = instantiate("RemoteCall",
+                quoted(serviceName),
+                quoted(mi.getName()),
+                "List.of(" +
+                        mi.getParameters().stream().map(Generator::serializeParameter).collect(Collectors.joining(","))
                         + ")");
 
         String returnValue = "void".equals(mi.getReturnType())
                 ? ""
-                : "return mapper.readValue(responseEntity.getBody(), new TypeReference<"+ mi.getReturnType() +">(){});";
+                : "return mapper.readValue(responseEntity.getBody(), new TypeReference<" + mi.getReturnType() + ">(){});";
 
         return multilineString(
                 "ObjectMapper mapper = new ObjectMapper();",
                 "try {",
-                    "String body = mapper.writeValueAsString("+ remoteCall + ");",
-                    "RestTemplate restTemplate = new RestTemplate();",
-                    "HttpHeaders headers = new HttpHeaders();",
-                    "headers.setContentType(MediaType.APPLICATION_JSON);",
-                    "HttpEntity<String> request = new HttpEntity<String>(body, headers);",
-                    "ResponseEntity<String> responseEntity = restTemplate.postForEntity(lambdaUrl, request, String.class);",
-                    "if(HttpStatus.OK == responseEntity.getStatusCode()){",
-                    returnValue,
-                    "} else {",
-                    "throw new RuntimeException(\"Unexpected HTTP Status \" + responseEntity.getStatusCode());",
-                    "}",
+                "String body = mapper.writeValueAsString(" + remoteCall + ");",
+                "RestTemplate restTemplate = new RestTemplate();",
+                "HttpHeaders headers = new HttpHeaders();",
+                "headers.setContentType(MediaType.APPLICATION_JSON);",
+                "HttpEntity<String> request = new HttpEntity<String>(body, headers);",
+                "ResponseEntity<String> responseEntity = restTemplate.postForEntity(lambdaUrl, request, String.class);",
+                "if(HttpStatus.OK == responseEntity.getStatusCode()){",
+                returnValue,
+                "} else {",
+                "throw new RuntimeException(\"Unexpected HTTP Status \" + responseEntity.getStatusCode());",
+                "}",
                 "} catch (JsonProcessingException e) {",
 //                    TODO throw custom error ?
-                     "throw new RuntimeException(e);",
+                "throw new RuntimeException(e);",
                 "}"
 
         );
@@ -264,14 +315,14 @@ public class Generator {
     static String serializeParameterType(TypeInfo type) {
         return instantiate("RemoteType",
                 type.name + ".class.getName()",
-                 "List.of(" + type.parameters.stream().map(Generator::serializeParameterType).collect(Collectors.joining(",")) + ")"
-                );
+                "List.of(" + type.parameters.stream().map(Generator::serializeParameterType).collect(Collectors.joining(",")) + ")"
+        );
     }
 
-    static String serializeParameter(ParameterInfo parameter){
+    static String serializeParameter(ParameterInfo parameter) {
         return instantiate("RemoteArgument",
-                            "mapper.writeValueAsString("+ parameter.getName() + ")" ,
-                                serializeParameterType(TypeInfo.fromString(parameter.getType()))
-                    );
+                "mapper.writeValueAsString(" + parameter.getName() + ")",
+                serializeParameterType(TypeInfo.fromString(parameter.getType()))
+        );
     }
 }

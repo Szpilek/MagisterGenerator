@@ -6,7 +6,9 @@ import org.reflections.scanners.SubTypesScanner;
 import org.reflections.util.ClasspathHelper;
 import org.reflections.util.ConfigurationBuilder;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.stereotype.Controller;
 import org.springframework.stereotype.Service;
+import org.springframework.web.bind.annotation.RestController;
 
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
@@ -20,6 +22,12 @@ public class ReflectionUtils {
     static List<Class<?>> findServiceClasses(Set<Class<?>> classes) {
         return classes.stream()
                 .filter(it -> it.isAnnotationPresent(Service.class))
+                .collect(Collectors.toList());
+    }
+
+    static List<Class<?>> findControllerClasses(Set<Class<?>> classes) {
+        return classes.stream()
+                .filter(it -> it.isAnnotationPresent(RestController.class) || it.isAnnotationPresent(Controller.class))
                 .collect(Collectors.toList());
     }
 
