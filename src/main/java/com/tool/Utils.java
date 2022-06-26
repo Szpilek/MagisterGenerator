@@ -41,6 +41,11 @@ public class Utils {
         }
     }
 
+    static String indent(String s, int number){
+        return Arrays.stream(s.split("\n")).map(i -> " ".repeat(number) + i)
+                .collect(Collectors.joining());
+    }
+
     static String quoted(String s) {
         return "\""+ s + "\"";
     }

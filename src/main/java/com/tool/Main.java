@@ -14,6 +14,7 @@ public class Main {
         List<ClassInfo> classInfos = Utils.map(serviceClasses, ClassInfoProcessor::toClassInfo);
         List<ClassInfo> controllerClassInfos = Utils.map(controllerClasses, ClassInfoProcessor::toClassInfo);
         var serviceToServiceDependencies = ClassInfoProcessor.createDependencyMap(classInfos);
+        var controllerToServiceDependencies = ClassInfoProcessor.createDependencyList(controllerClassInfos, classInfos);
 
         var parseResults = JavaParser.parse(Configuration.TARGET_PROJECT_PATH);
 
@@ -22,6 +23,7 @@ public class Main {
         Generator.generateClients(serviceToServiceDependencies, parseResults, ReflectionUtils.findSpringBootApplicationClass(allClasses));
         Generator.generateSpringProfilesForController(Utils.map(controllerClassInfos, ClassInfo::getClazz), parseResults, ReflectionUtils.findSpringBootApplicationClass(allClasses));
         Generator.generateController(Utils.map(controllerClassInfos, ClassInfo::getClazz), parseResults, ReflectionUtils.findSpringBootApplicationClass(allClasses));
+        ConfigGenerator.generateConfig(serviceToServiceDependencies, controllerToServiceDependencies, ReflectionUtils.findSpringBootApplicationClass(allClasses));
     }
 
     static void copyProject() throws Exception {
