@@ -1,9 +1,10 @@
 package com.tool;
 
+import com.sun.xml.bind.Util;
+
 import java.io.File;
-import java.util.List;
-import java.util.Scanner;
-import java.util.Set;
+import java.util.*;
+import java.util.stream.Collectors;
 
 public class Main {
     public static void main(String[] args) throws Exception {
@@ -11,19 +12,29 @@ public class Main {
         Set<Class<?>> allClasses = ReflectionUtils.getApplicationClasses();
         var serviceClasses = ReflectionUtils.findServiceClasses(allClasses);
         var controllerClasses = ReflectionUtils.findControllerClasses(allClasses);
-        List<ClassInfo> classInfos = Utils.map(serviceClasses, ClassInfoProcessor::toClassInfo);
-        List<ClassInfo> controllerClassInfos = Utils.map(controllerClasses, ClassInfoProcessor::toClassInfo);
-        var serviceToServiceDependencies = ClassInfoProcessor.createDependencyMap(classInfos);
-        var controllerToServiceDependencies = ClassInfoProcessor.createDependencyList(controllerClassInfos, classInfos);
+        List<ClassInfo> serviceInfos = Utils.map(serviceClasses, ClassInfoProcessor::toClassInfo);
+        List<ClassInfo> controllerInfos = Utils.map(controllerClasses, ClassInfoProcessor::toClassInfo);
+        var serviceToServiceDependencies = ClassInfoProcessor.createDependencyMap(
+                Utils.combine(serviceInfos, controllerInfos)
+        );
+        var controllerDependencies = getControllerDependencies(controllerInfos, serviceToServiceDependencies);
+//        var controllerToServiceDependencies = ClassInfoProcessor.createDependencyList(controllerClassInfos, classInfos);
 
         var parseResults = JavaParser.parse(Configuration.TARGET_PROJECT_PATH);
 
         Generator.generateCommunicationModel();
         Generator.generateSpringProfiles(serviceToServiceDependencies, parseResults);
-        Generator.generateClients(serviceToServiceDependencies, parseResults, ReflectionUtils.findSpringBootApplicationClass(allClasses));
-        Generator.generateSpringProfilesForController(Utils.map(controllerClassInfos, ClassInfo::getClazz), parseResults, ReflectionUtils.findSpringBootApplicationClass(allClasses));
-        Generator.generateController(Utils.map(controllerClassInfos, ClassInfo::getClazz), parseResults, ReflectionUtils.findSpringBootApplicationClass(allClasses));
-        ConfigGenerator.generateConfig(serviceToServiceDependencies, controllerToServiceDependencies, ReflectionUtils.findSpringBootApplicationClass(allClasses));
+        Generator.generateClients(serviceToServiceDependencies, parseResults, ReflectionUtils.findSpringBootApplicationClass(allClasses), serviceClasses);
+        Generator.generateSpringProfilesForController(Utils.map(controllerInfos, ClassInfo::getClazz), parseResults, ReflectionUtils.findSpringBootApplicationClass(allClasses));
+        Generator.generateController(Utils.map(controllerInfos, ClassInfo::getClazz), parseResults, ReflectionUtils.findSpringBootApplicationClass(allClasses));
+        ConfigGenerator.generateConfig(serviceToServiceDependencies, serviceClasses, controllerDependencies, ReflectionUtils.findSpringBootApplicationClass(allClasses));
+    }
+
+    private static List<Class<?>> getControllerDependencies(List<ClassInfo> controllerInfos, Map<Class<?>, List<Class<?>>> serviceToServiceDependencies) {
+        var controllerDependencies = Utils.map(controllerInfos, controllerInfo -> serviceToServiceDependencies.get(controllerInfo.clazz));
+        List<Class<?>> result = new ArrayList<>();
+        controllerDependencies.forEach(result::addAll);
+        return result;
     }
 
     static void copyProject() throws Exception {

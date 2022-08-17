@@ -1,5 +1,7 @@
 package com.tool;
 
+import org.hibernate.id.Configurable;
+import org.hibernate.internal.util.ReflectHelper;
 import org.reflections.Reflections;
 import org.reflections.scanners.ResourcesScanner;
 import org.reflections.scanners.SubTypesScanner;
@@ -19,15 +21,21 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 public class ReflectionUtils {
+    static boolean isInTargetApplication(Class<?> clazz)  {
+        return clazz.getPackageName().startsWith(Configuration.APPLICATION_PACKAGE);
+    }
+
     static List<Class<?>> findServiceClasses(Set<Class<?>> classes) {
         return classes.stream()
                 .filter(it -> it.isAnnotationPresent(Service.class))
+                .filter(ReflectionUtils::isInTargetApplication)
                 .collect(Collectors.toList());
     }
 
     static List<Class<?>> findControllerClasses(Set<Class<?>> classes) {
         return classes.stream()
                 .filter(it -> it.isAnnotationPresent(RestController.class) || it.isAnnotationPresent(Controller.class))
+                .filter(ReflectionUtils::isInTargetApplication)
                 .collect(Collectors.toList());
     }
 

@@ -6,13 +6,13 @@ import java.util.stream.Collectors;
 import static com.tool.Utils.*;
 
 public class ConfigGenerator {
-    public static void generateConfig(Map<Class<?>, List<Class<?>>> dependenciesFromProject, List<Class<?>> ControllerDependencies, Class<?> homeClass){
+    public static void generateConfig(Map<Class<?>, List<Class<?>>> dependenciesFromProject, List<Class<?>> serviceClasses, List<Class<?>> controllerDependencies, Class<?> homeClass){
         generateSamconfig(homeClass);
-        generateTemplate(dependenciesFromProject, ControllerDependencies, homeClass);
+        generateTemplate(dependenciesFromProject, serviceClasses, controllerDependencies, homeClass);
     }
 
 
-    private static void generateTemplate(Map<Class<?>, List<Class<?>>> dependenciesFromProject, List<Class<?>> ControllerDependencies, Class<?> homeClass){
+    private static void generateTemplate(Map<Class<?>, List<Class<?>>> dependenciesFromProject, List<Class<?>> serviceClasses, List<Class<?>> ControllerDependencies, Class<?> homeClass){
         Set<Class<?>> dependenciesToCreateClient = new HashSet<>();
         dependenciesFromProject.values().forEach(dependenciesToCreateClient::addAll);
 
@@ -26,10 +26,10 @@ public class ConfigGenerator {
                 indent("Function:", 1),
                 indent("Timeout: 20", 2),
                 "Resources:",
-                generateConfigForServiceLambdas(dependenciesFromProject),
+                generateConfigForServiceLambdas(dependenciesFromProject, serviceClasses),
                 generateConfigForControllerLambda(ControllerDependencies, homeClass),
                 "Outputs:",
-                indent("HelloWorldApi:", 1),
+                indent("Api:", 1),
                 indent("Description: \"API Gateway endpoint URL for Prod stage\"", 2),
                 indent("Value: !Sub \"https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/\"", 2)
 
@@ -37,16 +37,44 @@ public class ConfigGenerator {
         writeFile(Configuration.TARGET_JAVA_PATH, homeClass.getPackageName().replace(".", "/") + "/template.yaml", s);
     }
 
-    private static String generateConfigForLambda(){
+    private static String generateConfigForLambda(Class<?> lambdaClassImpl, List<Class<?>> dependencies){
+        Class<?>[] lambdaClasses = lambdaClassImpl.getInterfaces();
+        Class<?> lambdaClass = Arrays.stream(lambdaClasses).filter(it -> ReflectionUtils.getPrettyClassOrInterfaceName(lambdaClassImpl).contains(ReflectionUtils.getPrettyClassOrInterfaceName(it)))
+                .findFirst().orElseThrow(() -> new RuntimeException("Could not find"));
         return multilineString(
+                indent(getLambdaName(lambdaClass)+":", 1),
+                indent("Type: AWS::Serverless::Function", 2),
+                indent("Properties:", 2),
+                indent("CodeUri: ", 3), // dodać odnośnik do projektu
+                indent("Handler: " + getLambdaName(lambdaClass) + "::handleRequest", 3), //odnośnik do klasy od java
+                indent("Runtime: java11", 3),
+                indent("Architectures:", 4),
+                indent("- x86_64",4),
+                indent("MemorySize: 512",3),
+                indent("Policies:", 3),
+                indent("- LambdaInvokePolicy:", 4),
+                indent("FunctionName:", 5),
+                indent(generateInvokePolicyRows(dependencies), 6),
+                indent("Environment:",3),
+                indent("Variables:",4),
+                indent("JAVA_TOOL_OPTIONS: -XX:+TieredCompilation -XX:TieredStopAtLevel=1",5),
+                indent("Events:",3),
+                indent("HTTP:", 4),
+                indent("Type: Api",5),
+                indent("Properties:", 5),
+                indent("Path: /{proxy+}", 6),
+                indent("Method: ANY", 6)
         );
     }
 
-    private static String generateConfigForServiceLambdas(Map<Class<?>, List<Class<?>>> dependenciesFromProject){
-        return "";
+    private static String generateConfigForServiceLambdas(Map<Class<?>, List<Class<?>>> dependenciesFromProject, List<Class<?>> serviceClasses){
+//        Set<Class<?>> dependenciesToGenerateConfig = new HashSet<>();
+//        dependenciesFromProject.values().forEach(dependenciesToGenerateConfig::addAll);
+//        dependenciesToGenerateConfig.addAll(dependenciesFromProject.keySet());
+        return serviceClasses.stream().map(it -> generateConfigForLambda(it, dependenciesFromProject.get(it)) + "\n").collect(Collectors.joining());
     }
 
-    private static String generateConfigForControllerLambda(List<Class<?>> ControllerDependencies, Class<?> homeClass){
+    private static String generateConfigForControllerLambda(List<Class<?>> controllerDependencies, Class<?> homeClass){
         String homePackage = homeClass.getPackageName();
         return multilineString(
                 indent("ControllerLambda:", 1),
@@ -61,31 +89,40 @@ public class ConfigGenerator {
                 indent("Policies:", 3),
                 indent("- LambdaInvokePolicy:", 4),
                 indent("FunctionName:", 5),
-                indent(generateDependencies(ControllerDependencies), 6),
-                indent("!Ref ServiceLambda", 6), //todo przekazać zależności do innych lambd
+                indent(generateInvokePolicyRows(controllerDependencies), 6),
                 indent("Environment:", 3),
                 indent("Variables:", 4), //todo przekazać zmienne środowiskowe
-                indent("SERVICE_LAMBDA_ARN: !Ref ServiceLambda", 5), //todo przekazać zależności do innych lambd
-                indent("PARAM1: VALUE", 5), //?
-                indent("FLAG: 1", 5),
+                indent(generateEnvVariables(controllerDependencies), 5),
                 indent("JAVA_TOOL_OPTIONS: -XX:+TieredCompilation -XX:TieredStopAtLevel=1", 5),
                 indent("Events:", 3),
-                indent("HelloWorld:", 4), //przekazac prawdziwe eventy
+                indent("HTTP:", 4),
                 indent("Type: Api", 5),
                 indent("Properties:", 5),
-                indent("Path: /{proxy+}", 6), //prawdziwa ścieżka + proxy
+                indent("Path: /{proxy+}", 6),
                 indent("Method: ANY", 6)
         );
     }
 
-    private static String generateDependencies(List<Class<?>> dependencies) {
-        return dependencies.stream().map(ConfigGenerator::generateDependencyInfo).collect(Collectors.joining());
+    private static String generateInvokePolicyRows(List<Class<?>> dependencies) {
+        return dependencies.stream().map(ConfigGenerator::generateInvokePolicyRow).collect(Collectors.joining());
     }
 
-    private static String generateDependencyInfo(Class<?> clazz){
-        String clazzName = clazz.getName() + "Lambda";
-        String clazzNameUppercase = String.join("_", clazzName.split("([A-Z])")) + "_ARN";
-        return multilineString(clazzNameUppercase + ": !Ref " + clazzName);
+    private static String generateInvokePolicyRow(Class<?> clazz){
+        return multilineString("!Ref " + getLambdaName(clazz) + "\n");
+    }
+
+    private static String generateEnvVariables(List<Class<?>> dependencies) {
+        return multilineString(Utils.map(dependencies, ConfigGenerator::generateEnvVariable));
+//        return dependencies.stream().map(ConfigGenerator::generateEnvVariable).collect(Collectors.joining());
+    }
+
+    private static String generateEnvVariable(Class<?> clazz){
+        String clazzNameUppercase = getLambdaName(clazz).replaceAll("([A-Z])", "_" + "$1").toUpperCase() + "_ARN";
+        return multilineString(clazzNameUppercase.substring(1) + ": !Ref " + getLambdaName(clazz));
+    }
+
+    public static String getLambdaName(Class<?> clazz) {
+        return ReflectionUtils.getPrettyClassOrInterfaceName(clazz) + "Lambda";
     }
 
     private static void generateSamconfig(Class<?> homeClass){

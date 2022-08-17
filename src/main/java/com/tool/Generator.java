@@ -1,6 +1,9 @@
 package com.tool;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.github.javaparser.ast.CompilationUnit;
+import org.hibernate.service.spi.ServiceException;
 import org.springframework.context.annotation.Profile;
 
 import java.io.File;
@@ -47,7 +50,15 @@ public class Generator {
 
     static String clientImports = multilineString(
             "import org.springframework.web.client.RestTemplate;",
-            "import org.springframework.http.*;"
+            "import org.springframework.http.*;",
+            "import com.amazonaws.auth.DefaultAWSCredentialsProviderChain;",
+            "import com.amazonaws.regions.Regions;",
+            "import com.amazonaws.services.lambda.AWSLambda;",
+            "import com.amazonaws.services.lambda.AWSLambdaClientBuilder;",
+            "import com.amazonaws.services.lambda.model.InvokeRequest;",
+            "import com.amazonaws.services.lambda.model.InvokeResult;",
+            "import com.amazonaws.services.lambda.model.ServiceException;",
+            "import java.nio.charset.StandardCharsets;"
     );
 
     static String controllerImports = multilineString(
@@ -71,7 +82,7 @@ public class Generator {
         writeFile(Configuration.TARGET_JAVA_PATH, homeClass.getPackageName().replace(".", "/") + "/ControllerLambda.java", s);
     }
 
-    public static void generateClients(Map<Class<?>, List<Class<?>>> dependenciesFromProject, List<CompilationUnit> compilationUnits, Class<?> homeClass) {
+    public static void generateClients(Map<Class<?>, List<Class<?>>> dependenciesFromProject, List<CompilationUnit> compilationUnits, Class<?> homeClass, List<Class<?>> services) {
         Set<Class<?>> dependenciesToCreateClient = new HashSet<>();
         dependenciesFromProject.values().forEach(dependenciesToCreateClient::addAll);
         dependenciesToCreateClient.forEach(clazz -> {
@@ -88,8 +99,10 @@ public class Generator {
         });
 
         dependenciesFromProject.keySet().forEach(clazz -> {
-            String imports = getImports(clazz, compilationUnits);
-            Generator.generateServiceWrapper(clazz, imports, homeClass);
+            if(services.contains(clazz)) {
+                String imports = getImports(clazz, compilationUnits);
+                Generator.generateServiceWrapper(clazz, imports, homeClass);
+            }
         });
     }
 
@@ -127,7 +140,11 @@ public class Generator {
                 .collect(Collectors.joining("\n"));
     }
 
-    private static void generateServiceWrapper(Class<?> clazz, String imports, Class<?> homeClass) {
+    private static void generateServiceWrapper(Class<?> clazzImpl, String imports, Class<?> homeClass) {
+        Class<?>[] lambdaClasses = clazzImpl.getInterfaces();
+        Class<?> clazz = Arrays.stream(lambdaClasses).filter(it -> ReflectionUtils.getPrettyClassOrInterfaceName(clazzImpl).contains(ReflectionUtils.getPrettyClassOrInterfaceName(it)))
+                .findFirst().orElseThrow(() -> new RuntimeException("Could not find"));
+
         String classString = multilineString(
                 clazz.getPackage() + ";",
                 "import " + homeClass.getName() + ";",
@@ -253,6 +270,7 @@ public class Generator {
 
     private static void generateClient(Class<?> clazz, String imports, List<MethodInfo> methodInfos, String profiles) {
         String interfaceName = clazz.getName().replace(clazz.getPackageName() + ".", "");
+        String clazzNameUppercase =  ConfigGenerator.getLambdaName(clazz).replaceAll("([A-Z])", "_" + "$1").toUpperCase();
         String s = multilineString(
                 clazz.getPackage().toString() + ";",
                 imports,
@@ -261,6 +279,7 @@ public class Generator {
                 profiles,
                 "public class " + interfaceName + "Client implements " + interfaceName + "{",
                 "String lambdaUrl = System.getenv(\"" + interfaceName + "Url\");",
+                "String lambdaARN = System.getenv(\"" + clazzNameUppercase.substring(1) + "_ARN\");",
                 methodInfos.stream().map(it -> methodForClient(it, interfaceName)).collect(Collectors.joining()),
                 "}"
         );
@@ -273,8 +292,51 @@ public class Generator {
                 " " + mi.getReturnType() + " " + mi.getName(),
                 " (" + mi.getParameters().stream().map(it -> it.getType() + " " + it.getName()).collect(Collectors.joining(", ")),
                 "){",
-                clientMethodBody(mi, serviceName),
+                clientMethodBody1(mi, serviceName),
                 "}"
+        );
+    }
+
+    private static String clientMethodBody1(MethodInfo mi, String serviceName) {
+        String remoteCall = instantiate("RemoteCall",
+                quoted(serviceName),
+                quoted(mi.getName()),
+                "List.of(" +
+                        mi.getParameters().stream().map(Generator::serializeParameter).collect(Collectors.joining(","))
+                        + ")");
+
+        String returnValue = "void".equals(mi.getReturnType())
+                ? ""
+                : "return mapper.readValue(ans, new TypeReference<" + mi.getReturnType() + ">(){});";
+
+        return multilineString(
+                "ObjectMapper mapper = new ObjectMapper();",
+                "try {",
+                "var serviceArn = System.getenv(lambdaARN);",
+                "String body = mapper.writeValueAsString(" + remoteCall + ");",
+                "InvokeRequest invokeRequest = new InvokeRequest()",
+                        ".withFunctionName(serviceArn)",
+                        ".withPayload(body);",
+                "InvokeResult invokeResult = null;",
+                "try {",
+                    "AWSLambda awsLambda = AWSLambdaClientBuilder.standard()",
+                        ".withCredentials(new DefaultAWSCredentialsProviderChain())",
+                        ".withRegion(Regions.EU_WEST_1).build();",
+
+                    "invokeResult = awsLambda.invoke(invokeRequest);",
+                "} catch (",
+                    "ServiceException e) {",
+                    "System.out.println(e);",
+                    "throw e;",
+                "}",
+
+                "String ans = new String(invokeResult.getPayload().array(), StandardCharsets.UTF_8);",
+                returnValue,
+
+            "} catch (",
+            "JsonProcessingException e) {",
+                "throw new RuntimeException(e);",
+            "}"
         );
     }
 
