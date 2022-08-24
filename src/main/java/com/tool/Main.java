@@ -14,20 +14,20 @@ public class Main {
         var controllerClasses = ReflectionUtils.findControllerClasses(allClasses);
         List<ClassInfo> serviceInfos = Utils.map(serviceClasses, ClassInfoProcessor::toClassInfo);
         List<ClassInfo> controllerInfos = Utils.map(controllerClasses, ClassInfoProcessor::toClassInfo);
-        var serviceToServiceDependencies = ClassInfoProcessor.createDependencyMap(
+        var dependencyMap = ClassInfoProcessor.createDependencyMap(
                 Utils.combine(serviceInfos, controllerInfos)
         );
-        var controllerDependencies = getControllerDependencies(controllerInfos, serviceToServiceDependencies);
-//        var controllerToServiceDependencies = ClassInfoProcessor.createDependencyList(controllerClassInfos, classInfos);
+        var serviceDependencies = ClassInfoProcessor.createDependencyMap(serviceInfos);
+        var controllerDependencies = getControllerDependencies(controllerInfos, dependencyMap);
 
         var parseResults = JavaParser.parse(Configuration.TARGET_PROJECT_PATH);
 
         Generator.generateCommunicationModel();
-        Generator.generateSpringProfiles(serviceToServiceDependencies, parseResults);
-        Generator.generateClients(serviceToServiceDependencies, parseResults, ReflectionUtils.findSpringBootApplicationClass(allClasses), serviceClasses);
+        Generator.generateSpringProfiles(serviceDependencies, parseResults);
+        Generator.generateClients(dependencyMap, parseResults, ReflectionUtils.findSpringBootApplicationClass(allClasses), serviceClasses, controllerClasses);
         Generator.generateSpringProfilesForController(Utils.map(controllerInfos, ClassInfo::getClazz), parseResults, ReflectionUtils.findSpringBootApplicationClass(allClasses));
         Generator.generateController(Utils.map(controllerInfos, ClassInfo::getClazz), parseResults, ReflectionUtils.findSpringBootApplicationClass(allClasses));
-        ConfigGenerator.generateConfig(serviceToServiceDependencies, serviceClasses, controllerDependencies, ReflectionUtils.findSpringBootApplicationClass(allClasses));
+        ConfigGenerator.generateConfig(dependencyMap, serviceClasses, controllerDependencies, ReflectionUtils.findSpringBootApplicationClass(allClasses));
     }
 
     private static List<Class<?>> getControllerDependencies(List<ClassInfo> controllerInfos, Map<Class<?>, List<Class<?>>> serviceToServiceDependencies) {

@@ -49,6 +49,8 @@ public class Generator {
     );
 
     static String clientImports = multilineString(
+            "import org.springframework.stereotype.Service;",
+            "import java.util.List;",
             "import org.springframework.web.client.RestTemplate;",
             "import org.springframework.http.*;",
             "import com.amazonaws.auth.DefaultAWSCredentialsProviderChain;",
@@ -82,7 +84,7 @@ public class Generator {
         writeFile(Configuration.TARGET_JAVA_PATH, homeClass.getPackageName().replace(".", "/") + "/ControllerLambda.java", s);
     }
 
-    public static void generateClients(Map<Class<?>, List<Class<?>>> dependenciesFromProject, List<CompilationUnit> compilationUnits, Class<?> homeClass, List<Class<?>> services) {
+    public static void generateClients(Map<Class<?>, List<Class<?>>> dependenciesFromProject, List<CompilationUnit> compilationUnits, Class<?> homeClass, List<Class<?>> services, List<Class<?>> controllers) {
         Set<Class<?>> dependenciesToCreateClient = new HashSet<>();
         dependenciesFromProject.values().forEach(dependenciesToCreateClient::addAll);
         dependenciesToCreateClient.forEach(clazz -> {
@@ -93,7 +95,7 @@ public class Generator {
                         return new MethodInfo(method, method.getName(), parameterInfos, returnType, ReflectionUtils.getMethodClassName(method), method.getDeclaringClass().getPackageName());
                     }).collect(Collectors.toList());
             String imports = getImports(clazz, compilationUnits);
-            var profiles = findSpringProfilesForClient(dependenciesFromProject, clazz);
+            var profiles = findSpringProfilesForClient(dependenciesFromProject, clazz, controllers);
             Generator.generateClient(clazz, imports, methodInfos, profiles);
 //            Generator.generateServiceWrapper(clazz, imports, methodInfos, homeClass);
         });
@@ -109,12 +111,16 @@ public class Generator {
     public static void generateSpringProfiles(Map<Class<?>, List<Class<?>>> dependenciesFromProject, List<CompilationUnit> compilationUnits) {
         dependenciesFromProject.keySet().forEach((it) -> {
             var clazz = getClassOrInterface(ReflectionUtils.getPrettyClassOrInterfaceName(it), compilationUnits);
-            clazz.addSingleMemberAnnotation(Profile.class, quoted(ReflectionUtils.getPrettyClassOrInterfaceName(it)));
+            clazz.addSingleMemberAnnotation(Profile.class, quoted(getInterfaceNameForImpl(ReflectionUtils.getPrettyClassOrInterfaceName(it))));
             clazz.tryAddImportToParentCompilationUnit(Profile.class);
             writeFile(Configuration.TARGET_JAVA_PATH, it.getName().replace(".", "/") + ".java", clazz.getParentNode().get().toString());
         });
 
         compilationUnits.forEach(it -> System.out.println(it));
+    }
+
+    private static String getInterfaceNameForImpl(String name){
+        return "Impl".equals(name.substring(name.length() - 4)) ? name.substring(0 , name.length() - 4) : name;
     }
 
     public static void generateSpringProfilesForController(List<Class<?>> controllerClasses, List<CompilationUnit> compilationUnits, Class<?> homeClass) {
@@ -130,14 +136,20 @@ public class Generator {
         compilationUnits.forEach(it -> System.out.println(it));
     }
 
-    private static String findSpringProfilesForClient(Map<Class<?>, List<Class<?>>> dependenciesFromProject, Class<?> clazz) {
-        return dependenciesFromProject.keySet().stream()
+    private static String findSpringProfilesForClient(Map<Class<?>, List<Class<?>>> dependenciesFromProject, Class<?> clazz, List<Class<?>> controllers) {
+        String profiles = dependenciesFromProject.keySet().stream()
                 .filter(key ->
                         dependenciesFromProject.get(key)
                                 .stream().anyMatch(value -> value.isAssignableFrom(clazz)))
-                .map(ReflectionUtils::getPrettyClassOrInterfaceName)
-                .map(it -> "@Profile(" + quoted(it) + ")")
+                .map((it) -> {
+                    return controllers.contains(it) ?
+                            "Controller" :
+                            getInterfaceNameForImpl(ReflectionUtils.getPrettyClassOrInterfaceName(it));
+                })
+                .map(it -> quoted(it) + ",")
                 .collect(Collectors.joining("\n"));
+
+        return "@Profile({" + profiles.substring(0, profiles.length() - 1) + "})";
     }
 
     private static void generateServiceWrapper(Class<?> clazzImpl, String imports, Class<?> homeClass) {
@@ -270,13 +282,14 @@ public class Generator {
 
     private static void generateClient(Class<?> clazz, String imports, List<MethodInfo> methodInfos, String profiles) {
         String interfaceName = clazz.getName().replace(clazz.getPackageName() + ".", "");
-        String clazzNameUppercase =  ConfigGenerator.getLambdaName(clazz).replaceAll("([A-Z])", "_" + "$1").toUpperCase();
+        String clazzNameUppercase = ConfigGenerator.getLambdaName(clazz).replaceAll("([A-Z])", "_" + "$1").toUpperCase();
         String s = multilineString(
                 clazz.getPackage().toString() + ";",
                 imports,
                 customImports,
                 clientImports,
                 profiles,
+                "@Service(\"" + interfaceName + "\")",
                 "public class " + interfaceName + "Client implements " + interfaceName + "{",
                 "String lambdaUrl = System.getenv(\"" + interfaceName + "Url\");",
                 "String lambdaARN = System.getenv(\"" + clazzNameUppercase.substring(1) + "_ARN\");",
@@ -312,31 +325,31 @@ public class Generator {
         return multilineString(
                 "ObjectMapper mapper = new ObjectMapper();",
                 "try {",
-                "var serviceArn = System.getenv(lambdaARN);",
+                "var serviceArn = lambdaARN;",
                 "String body = mapper.writeValueAsString(" + remoteCall + ");",
                 "InvokeRequest invokeRequest = new InvokeRequest()",
-                        ".withFunctionName(serviceArn)",
-                        ".withPayload(body);",
+                ".withFunctionName(serviceArn)",
+                ".withPayload(body);",
                 "InvokeResult invokeResult = null;",
                 "try {",
-                    "AWSLambda awsLambda = AWSLambdaClientBuilder.standard()",
-                        ".withCredentials(new DefaultAWSCredentialsProviderChain())",
-                        ".withRegion(Regions.EU_WEST_1).build();",
+                "AWSLambda awsLambda = AWSLambdaClientBuilder.standard()",
+                ".withCredentials(new DefaultAWSCredentialsProviderChain())",
+                ".withRegion(Regions.EU_WEST_1).build();",
 
-                    "invokeResult = awsLambda.invoke(invokeRequest);",
+                "invokeResult = awsLambda.invoke(invokeRequest);",
                 "} catch (",
-                    "ServiceException e) {",
-                    "System.out.println(e);",
-                    "throw e;",
+                "ServiceException e) {",
+                "System.out.println(e);",
+                "throw e;",
                 "}",
 
                 "String ans = new String(invokeResult.getPayload().array(), StandardCharsets.UTF_8);",
                 returnValue,
 
-            "} catch (",
-            "JsonProcessingException e) {",
+                "} catch (",
+                "JsonProcessingException e) {",
                 "throw new RuntimeException(e);",
-            "}"
+                "}"
         );
     }
 

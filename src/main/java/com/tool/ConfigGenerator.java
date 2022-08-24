@@ -26,7 +26,7 @@ public class ConfigGenerator {
                 indent("Function:", 1),
                 indent("Timeout: 20", 2),
                 "Resources:",
-                generateConfigForServiceLambdas(dependenciesFromProject, serviceClasses),
+                generateConfigForServiceLambdas(dependenciesFromProject, serviceClasses, homeClass),
                 generateConfigForControllerLambda(ControllerDependencies, homeClass),
                 "Outputs:",
                 indent("Api:", 1),
@@ -34,44 +34,44 @@ public class ConfigGenerator {
                 indent("Value: !Sub \"https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/\"", 2)
 
         );
-        writeFile(Configuration.TARGET_JAVA_PATH, homeClass.getPackageName().replace(".", "/") + "/template.yaml", s);
+        writeFile(Configuration.TARGET_PROJECT_PATH,  "template.yaml", s);
     }
 
-    private static String generateConfigForLambda(Class<?> lambdaClassImpl, List<Class<?>> dependencies){
+    private static String generateConfigForLambda(Class<?> lambdaClassImpl, List<Class<?>> dependencies, Class<?> homeClass){
+        String homePackage = homeClass.getPackageName();
         Class<?>[] lambdaClasses = lambdaClassImpl.getInterfaces();
         Class<?> lambdaClass = Arrays.stream(lambdaClasses).filter(it -> ReflectionUtils.getPrettyClassOrInterfaceName(lambdaClassImpl).contains(ReflectionUtils.getPrettyClassOrInterfaceName(it)))
                 .findFirst().orElseThrow(() -> new RuntimeException("Could not find"));
+
+        String policies = dependencies.isEmpty() ? "" : multilineString(
+                indent("Policies:", 3),
+                indent("- LambdaInvokePolicy:", 3),
+                indent("FunctionName:", 5),
+                indent(generateInvokePolicyRows(dependencies), 6)
+        );
+
         return multilineString(
                 indent(getLambdaName(lambdaClass)+":", 1),
                 indent("Type: AWS::Serverless::Function", 2),
                 indent("Properties:", 2),
                 indent("CodeUri: ", 3), // dodać odnośnik do projektu
-                indent("Handler: " + getLambdaName(lambdaClass) + "::handleRequest", 3), //odnośnik do klasy od java
+                indent("Handler: " + homePackage + "." + getLambdaName(lambdaClass) + "::handleRequest", 3), //odnośnik do klasy od java
                 indent("Runtime: java11", 3),
-                indent("Architectures:", 4),
-                indent("- x86_64",4),
-                indent("MemorySize: 512",3),
-                indent("Policies:", 3),
-                indent("- LambdaInvokePolicy:", 4),
-                indent("FunctionName:", 5),
-                indent(generateInvokePolicyRows(dependencies), 6),
+                indent("Architectures:", 3),
+                indent("- x86_64",3),
+                indent("MemorySize: 1024",3),
+                policies,
                 indent("Environment:",3),
                 indent("Variables:",4),
-                indent("JAVA_TOOL_OPTIONS: -XX:+TieredCompilation -XX:TieredStopAtLevel=1",5),
-                indent("Events:",3),
-                indent("HTTP:", 4),
-                indent("Type: Api",5),
-                indent("Properties:", 5),
-                indent("Path: /{proxy+}", 6),
-                indent("Method: ANY", 6)
+                indent("JAVA_TOOL_OPTIONS: -XX:+TieredCompilation -XX:TieredStopAtLevel=1",5)
         );
     }
 
-    private static String generateConfigForServiceLambdas(Map<Class<?>, List<Class<?>>> dependenciesFromProject, List<Class<?>> serviceClasses){
+    private static String generateConfigForServiceLambdas(Map<Class<?>, List<Class<?>>> dependenciesFromProject, List<Class<?>> serviceClasses, Class<?> homeClass){
 //        Set<Class<?>> dependenciesToGenerateConfig = new HashSet<>();
 //        dependenciesFromProject.values().forEach(dependenciesToGenerateConfig::addAll);
 //        dependenciesToGenerateConfig.addAll(dependenciesFromProject.keySet());
-        return serviceClasses.stream().map(it -> generateConfigForLambda(it, dependenciesFromProject.get(it)) + "\n").collect(Collectors.joining());
+        return serviceClasses.stream().map(it -> generateConfigForLambda(it, dependenciesFromProject.get(it), homeClass) + "\n").collect(Collectors.joining());
     }
 
     private static String generateConfigForControllerLambda(List<Class<?>> controllerDependencies, Class<?> homeClass){
@@ -80,14 +80,14 @@ public class ConfigGenerator {
                 indent("ControllerLambda:", 1),
                 indent("Type: AWS::Serverless::Function", 2),
                 indent("Properties:", 2),
-                indent("CodeUri: " + homePackage ,3),
+                indent("CodeUri: ." ,3),
                 indent("Handler: " + homePackage + ".ControllerLambda::handleRequest", 3),
                 indent("Runtime: java11", 3),
                 indent("Architectures:", 3),
-                indent("- x86_64", 4),
-                indent("MemorySize: 512", 3),
+                indent("- x86_64", 3),
+                indent("MemorySize: 1024", 3),
                 indent("Policies:", 3),
-                indent("- LambdaInvokePolicy:", 4),
+                indent("- LambdaInvokePolicy:", 3),
                 indent("FunctionName:", 5),
                 indent(generateInvokePolicyRows(controllerDependencies), 6),
                 indent("Environment:", 3),
@@ -108,7 +108,7 @@ public class ConfigGenerator {
     }
 
     private static String generateInvokePolicyRow(Class<?> clazz){
-        return multilineString("!Ref " + getLambdaName(clazz) + "\n");
+        return multilineString("Ref: " + getLambdaName(clazz) + "\n");
     }
 
     private static String generateEnvVariables(List<Class<?>> dependencies) {
@@ -118,7 +118,10 @@ public class ConfigGenerator {
 
     private static String generateEnvVariable(Class<?> clazz){
         String clazzNameUppercase = getLambdaName(clazz).replaceAll("([A-Z])", "_" + "$1").toUpperCase() + "_ARN";
-        return multilineString(clazzNameUppercase.substring(1) + ": !Ref " + getLambdaName(clazz));
+        return multilineString(
+                clazzNameUppercase.substring(1) + ":",
+                indent("Ref: " + getLambdaName(clazz), 1)
+        );
     }
 
     public static String getLambdaName(Class<?> clazz) {
@@ -140,7 +143,7 @@ public class ConfigGenerator {
         "image_repositories = []"
         );
 
-        writeFile(Configuration.TARGET_JAVA_PATH, homeClass.getPackageName().replace(".", "/") + "/samconfig.toml", s);
+        writeFile(Configuration.TARGET_PROJECT_PATH, "samconfig.toml", s);
     }
 
 
