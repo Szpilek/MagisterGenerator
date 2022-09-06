@@ -1,9 +1,6 @@
 package com.tool;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.core.type.TypeReference;
 import com.github.javaparser.ast.CompilationUnit;
-import org.hibernate.service.spi.ServiceException;
 import org.springframework.context.annotation.Profile;
 
 import java.io.File;
@@ -101,7 +98,7 @@ public class Generator {
         });
 
         dependenciesFromProject.keySet().forEach(clazz -> {
-            if(services.contains(clazz)) {
+            if (services.contains(clazz)) {
                 String imports = getImports(clazz, compilationUnits);
                 Generator.generateServiceWrapper(clazz, imports, homeClass);
             }
@@ -119,8 +116,8 @@ public class Generator {
         compilationUnits.forEach(it -> System.out.println(it));
     }
 
-    private static String getInterfaceNameForImpl(String name){
-        return "Impl".equals(name.substring(name.length() - 4)) ? name.substring(0 , name.length() - 4) : name;
+    private static String getInterfaceNameForImpl(String name) {
+        return "Impl".equals(name.substring(name.length() - 4)) ? name.substring(0, name.length() - 4) : name;
     }
 
     public static void generateSpringProfilesForController(List<Class<?>> controllerClasses, List<CompilationUnit> compilationUnits, Class<?> homeClass) {
@@ -153,9 +150,14 @@ public class Generator {
     }
 
     private static void generateServiceWrapper(Class<?> clazzImpl, String imports, Class<?> homeClass) {
+        System.out.println(clazzImpl);
+        System.out.println(clazzImpl.getInterfaces());
         Class<?>[] lambdaClasses = clazzImpl.getInterfaces();
-        Class<?> clazz = Arrays.stream(lambdaClasses).filter(it -> ReflectionUtils.getPrettyClassOrInterfaceName(clazzImpl).contains(ReflectionUtils.getPrettyClassOrInterfaceName(it)))
-                .findFirst().orElseThrow(() -> new RuntimeException("Could not find"));
+        Class<?> clazz = Arrays.stream(lambdaClasses)
+                .filter(it ->
+                        ReflectionUtils.getPrettyClassOrInterfaceName(clazzImpl)
+                                .contains(ReflectionUtils.getPrettyClassOrInterfaceName(it))
+                ).findFirst().orElseThrow(() -> new RuntimeException("Could not find"));
 
         String classString = multilineString(
                 clazz.getPackage() + ";",

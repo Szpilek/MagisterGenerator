@@ -1,13 +1,12 @@
 package com.tool;
 
-import com.sun.xml.bind.Util;
-
 import java.io.File;
 import java.util.*;
 import java.util.stream.Collectors;
 
 public class Main {
     public static void main(String[] args) throws Exception {
+        Configuration.printConfiguration();
         copyProject();
         Set<Class<?>> allClasses = ReflectionUtils.getApplicationClasses();
         var serviceClasses = ReflectionUtils.findServiceClasses(allClasses);
@@ -20,7 +19,7 @@ public class Main {
         var serviceDependencies = ClassInfoProcessor.createDependencyMap(serviceInfos);
         var controllerDependencies = getControllerDependencies(controllerInfos, dependencyMap);
 
-        var parseResults = JavaParser.parse(Configuration.TARGET_PROJECT_PATH);
+        var parseResults = JavaParser.parse(Configuration.SOURCE_JAVA_PATH);
 
         Generator.generateCommunicationModel();
         Generator.generateSpringProfiles(serviceDependencies, parseResults);
@@ -40,16 +39,17 @@ public class Main {
     static void copyProject() throws Exception {
         boolean wasProjectAlreadyGenerated = new File(Configuration.TARGET_PROJECT_PATH).exists();
         if(wasProjectAlreadyGenerated){
-            System.out.print("Target project path: " + Configuration.TARGET_PROJECT_PATH +  "already exists");
-            System.out.println("Do You want to remove it? [Y/n]");
-            Scanner input = new Scanner(System.in);
-            var answer = input.nextLine().trim().toUpperCase();
-            if ("Y".equals(answer) || "".equals(answer)) {
-                System.out.println("Attempting to remove " + Configuration.TARGET_PROJECT_PATH);
+//            System.out.print("Target project path: " + Configuration.TARGET_PROJECT_PATH +  "already exists");
+//            System.out.println("Do You want to remove it? [Y/n]");
+//            Scanner input = new Scanner(System.in);
+//            var answer = input.nextLine().trim().toUpperCase();
+//            if ("Y".equals(answer) || "".equals(answer)) {
+//            System.out.println("Attempting to remove " + Configuration.TARGET_PROJECT_PATH);
+            System.out.println("Attempting to remove " + Configuration.TARGET_PROJECT_PATH);
                 CommandLine.executeCommand("rm", "-rf", Configuration.TARGET_PROJECT_PATH);
-            } else {
-                throw new RuntimeException("Project already generated");
-            }
+//            } else {
+//                throw new RuntimeException("Project already generated");
+//            }
         }
         CommandLine.executeCommand("cp", "-R", Configuration.SOURCE_PROJECT_PATH, Configuration.TARGET_PROJECT_PATH);
     }

@@ -16,6 +16,7 @@ import java.util.stream.Collectors;
 
 public class ParserUtils {
     public static ClassOrInterfaceDeclaration getClassOrInterface(String name, List<CompilationUnit> parseResults){
+        System.out.println("getClassOrInterface " + name);
         return parseResults.stream()
                 .map(it -> it.getClassByName(name).or(() -> it.getInterfaceByName(name)))
                 .filter(Optional::isPresent)

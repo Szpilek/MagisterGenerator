@@ -1,7 +1,5 @@
 package com.tool;
 
-import org.hibernate.id.Configurable;
-import org.hibernate.internal.util.ReflectHelper;
 import org.reflections.Reflections;
 import org.reflections.scanners.ResourcesScanner;
 import org.reflections.scanners.SubTypesScanner;
