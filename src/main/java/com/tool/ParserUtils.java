@@ -62,7 +62,8 @@ public class ParserUtils {
         String clazzName = Arrays.stream(clazz.getName().split("[.]")).reduce((first, second) -> second).get();
         var classOrInterface = getClassOrInterface(clazzName, parseResults);
         var imports = classOrInterface.getParentNode().map(it -> (CompilationUnit) it).get().getImports();
-        return imports.stream().map(it -> "import " + it.getName().asString() + ";\n").collect(Collectors.joining());
+        
+        return imports.stream().map(it -> it.toString() + ";\n").collect(Collectors.joining());
     }
 
     public static List<ParameterInfo> getParameters(Method method, List<CompilationUnit> parseResults) {

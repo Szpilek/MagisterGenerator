@@ -87,9 +87,10 @@ public class ConfigGenerator {
                 indent("- x86_64", 3),
                 indent("MemorySize: 1024", 3),
                 indent("Policies:", 3),
-                indent("- LambdaInvokePolicy:", 3),
-                indent("FunctionName:", 5),
-                indent(generateInvokePolicyRows(controllerDependencies), 6),
+//                indent("- LambdaInvokePolicy:", 3),
+//                indent("FunctionName:", 5),
+//                indent(generateInvokePolicyRows(controllerDependencies), 6),
+                generateInvokePolicyRows(controllerDependencies),
                 indent("Environment:", 3),
                 indent("Variables:", 4), //todo przekazać zmienne środowiskowe
                 indent(generateEnvVariables(controllerDependencies), 5),
@@ -108,7 +109,9 @@ public class ConfigGenerator {
     }
 
     private static String generateInvokePolicyRow(Class<?> clazz){
-        return multilineString("Ref: " + getLambdaName(clazz) + "\n");
+        return multilineString(indent("- LambdaInvokePolicy:", 3),
+                indent("FunctionName:", 5),
+                indent("Ref: " + getLambdaName(clazz) , 6)+ "\n");
     }
 
     private static String generateEnvVariables(List<Class<?>> dependencies) {

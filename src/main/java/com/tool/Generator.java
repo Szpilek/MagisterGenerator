@@ -5,6 +5,7 @@ import org.springframework.context.annotation.Profile;
 
 import java.io.File;
 import java.io.IOException;
+import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.nio.file.Files;
 import java.nio.file.Paths;
@@ -15,6 +16,7 @@ import static com.tool.ParserUtils.*;
 import static com.tool.Utils.*;
 import static com.tool.Configuration.SOURCE_PROJECT_PATH;
 import static com.tool.Configuration.TARGET_PROJECT_PATH;
+import org.springframework.stereotype.Service;
 
 public class Generator {
     // TODO nie hardcodować
@@ -89,7 +91,7 @@ public class Generator {
                     .map(method -> {
                         String returnType = getReturnType(method, compilationUnits);
                         List<ParameterInfo> parameterInfos = getParameters(method, compilationUnits);
-                        return new MethodInfo(method, method.getName(), parameterInfos, returnType, ReflectionUtils.getMethodClassName(method), method.getDeclaringClass().getPackageName());
+                        return new MethodInfo(method, method.getName(), parameterInfos, returnType, ReflectionUtils.getMethodClassName(method), method.getDeclaringClass().getPackageName(), method.getReturnType());
                     }).collect(Collectors.toList());
             String imports = getImports(clazz, compilationUnits);
             var profiles = findSpringProfilesForClient(dependenciesFromProject, clazz, controllers);
@@ -109,6 +111,7 @@ public class Generator {
         dependenciesFromProject.keySet().forEach((it) -> {
             var clazz = getClassOrInterface(ReflectionUtils.getPrettyClassOrInterfaceName(it), compilationUnits);
             clazz.addSingleMemberAnnotation(Profile.class, quoted(getInterfaceNameForImpl(ReflectionUtils.getPrettyClassOrInterfaceName(it))));
+            clazz.addSingleMemberAnnotation(Service.class, quoted(getInterfaceNameForImpl(ReflectionUtils.getPrettyClassOrInterfaceName(it))));
             clazz.tryAddImportToParentCompilationUnit(Profile.class);
             writeFile(Configuration.TARGET_JAVA_PATH, it.getName().replace(".", "/") + ".java", clazz.getParentNode().get().toString());
         });
@@ -320,18 +323,18 @@ public class Generator {
                         mi.getParameters().stream().map(Generator::serializeParameter).collect(Collectors.joining(","))
                         + ")");
 
-        String returnValue = "void".equals(mi.getReturnType())
+        String returnStatement = "void".equals(mi.getReturnType())
                 ? ""
-                : "return mapper.readValue(ans, new TypeReference<" + mi.getReturnType() + ">(){});";
+                : "return mapper.readValue(ans, new TypeReference<" + Configuration.getInterfaceImplementationForDeserialization(mi.returnTypeClazz).getCanonicalName() + ">(){});";
 
         return multilineString(
                 "ObjectMapper mapper = new ObjectMapper();",
                 "try {",
                 "var serviceArn = lambdaARN;",
-                "String body = mapper.writeValueAsString(" + remoteCall + ");",
+                "String payload = mapper.writeValueAsString(" + remoteCall + ");",
                 "InvokeRequest invokeRequest = new InvokeRequest()",
                 ".withFunctionName(serviceArn)",
-                ".withPayload(body);",
+                ".withPayload(payload);",
                 "InvokeResult invokeResult = null;",
                 "try {",
                 "AWSLambda awsLambda = AWSLambdaClientBuilder.standard()",
@@ -346,7 +349,7 @@ public class Generator {
                 "}",
 
                 "String ans = new String(invokeResult.getPayload().array(), StandardCharsets.UTF_8);",
-                returnValue,
+                returnStatement,
 
                 "} catch (",
                 "JsonProcessingException e) {",

@@ -9,15 +9,17 @@ public class MethodInfo {
     String className;
     String name;
     List<ParameterInfo> parameters;
+    Class returnTypeClazz;
     String returnType;
-
-    public MethodInfo(Method method, String name, List<ParameterInfo> parameters, String returnType, String className, String packageName) {
+    
+    public MethodInfo(Method method, String name, List<ParameterInfo> parameters, String returnType, String className, String packageName, Class returnTypeClazz) {
         this.method = method;
         this.name = name;
         this.parameters = parameters;
         this.returnType = returnType;
         this.className = className;
         this.packageName = packageName;
+        this.returnTypeClazz = returnTypeClazz;
     }
 
     public Method getMethod() {
