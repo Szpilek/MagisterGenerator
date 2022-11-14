@@ -1,6 +1,9 @@
 package com.tool;
 
 import com.github.javaparser.ast.CompilationUnit;
+import com.github.javaparser.ast.NodeList;
+import com.github.javaparser.ast.expr.AnnotationExpr;
+import com.github.javaparser.ast.expr.MarkerAnnotationExpr;
 import org.springframework.context.annotation.Profile;
 
 import java.io.File;
@@ -111,6 +114,9 @@ public class Generator {
         dependenciesFromProject.keySet().forEach((it) -> {
             var clazz = getClassOrInterface(ReflectionUtils.getPrettyClassOrInterfaceName(it), compilationUnits);
             clazz.addSingleMemberAnnotation(Profile.class, quoted(getInterfaceNameForImpl(ReflectionUtils.getPrettyClassOrInterfaceName(it))));
+            NodeList<AnnotationExpr> annotations = clazz.getAnnotations();
+            annotations.removeIf(i -> i.getName().asString().equals("Service"));
+            clazz.setAnnotations(annotations);
             clazz.addSingleMemberAnnotation(Service.class, quoted(getInterfaceNameForImpl(ReflectionUtils.getPrettyClassOrInterfaceName(it))));
             clazz.tryAddImportToParentCompilationUnit(Profile.class);
             writeFile(Configuration.TARGET_JAVA_PATH, it.getName().replace(".", "/") + ".java", clazz.getParentNode().get().toString());
@@ -323,9 +329,12 @@ public class Generator {
                         mi.getParameters().stream().map(Generator::serializeParameter).collect(Collectors.joining(","))
                         + ")");
 
+        Class<?> returnClass = Configuration.getInterfaceImplementationForDeserialization(mi.returnTypeClazz);
+        String returnClassString = returnClass.getTypeParameters().length == 0 ? returnClass.getCanonicalName() : returnClass.getCanonicalName() + mi.getReturnType().substring(mi.getReturnType().indexOf("<"));
+
         String returnStatement = "void".equals(mi.getReturnType())
                 ? ""
-                : "return mapper.readValue(ans, new TypeReference<" + Configuration.getInterfaceImplementationForDeserialization(mi.returnTypeClazz).getCanonicalName() + ">(){});";
+                : "return mapper.readValue(ans, new TypeReference<" + returnClassString + ">(){});";
 
         return multilineString(
                 "ObjectMapper mapper = new ObjectMapper();",

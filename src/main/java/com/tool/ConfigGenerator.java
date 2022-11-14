@@ -55,7 +55,7 @@ public class ConfigGenerator {
                 indent("Type: AWS::Serverless::Function", 2),
                 indent("Properties:", 2),
                 indent("CodeUri: ", 3), // dodać odnośnik do projektu
-                indent("Handler: " + homePackage + "." + getLambdaName(lambdaClass) + "::handleRequest", 3), //odnośnik do klasy od java
+                indent("Handler: " + lambdaClass.getPackage().getName() + "." + getLambdaName(lambdaClass) + "::handleRequest", 3), //odnośnik do klasy od java
                 indent("Runtime: java11", 3),
                 indent("Architectures:", 3),
                 indent("- x86_64",3),
