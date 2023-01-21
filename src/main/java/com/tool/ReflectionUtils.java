@@ -69,7 +69,7 @@ public class ReflectionUtils {
     }
 
     public static List<Class<?>> getConstructorArgs(Class<?> it){
-        return Arrays.stream(it.getConstructors())
+        return Arrays.stream(it.getDeclaredConstructors())
                 .flatMap(constructor -> getParameterTypes(constructor).stream())
                 .collect(Collectors.toList());
     }

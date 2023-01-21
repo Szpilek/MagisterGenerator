@@ -330,7 +330,9 @@ public class Generator {
                         + ")");
 
         Class<?> returnClass = Configuration.getInterfaceImplementationForDeserialization(mi.returnTypeClazz);
-        String returnClassString = returnClass.getTypeParameters().length == 0 ? returnClass.getCanonicalName() : returnClass.getCanonicalName() + mi.getReturnType().substring(mi.getReturnType().indexOf("<"));
+        String returnClassString = returnClass.getTypeParameters().length == 0
+                ? returnClass.getCanonicalName()
+                : returnClass.getCanonicalName() + mi.getReturnType().substring(mi.getReturnType().indexOf("<"));
 
         String returnStatement = "void".equals(mi.getReturnType())
                 ? ""

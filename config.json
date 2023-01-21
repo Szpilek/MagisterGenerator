@@ -1,0 +1,6 @@
+{
+  "interfaceImplementations": {
+    "org.springframework.data.domain.Page" : "org.springframework.data.domain.PageImpl",
+    "java.util.Set" : "java.util.HashSet"
+  }
+}
